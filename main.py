@@ -20,7 +20,7 @@ def keep_alive():
     t = Thread(target=run)
     t.start()
 
-TOKEN = '8915748936:AAH5R5fGkW3hLXXCVn3_q1RFBq0p4kGN9Zw'
+TOKEN = 8915748936:AAEJw_iwXbnuMQzrEIAJF163iRPe-30rlpY
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
