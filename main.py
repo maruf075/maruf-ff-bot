@@ -1,6 +1,24 @@
+import os
 import logging
+from threading import Thread
+from flask import Flask
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+
+# Flask Web Server setup for Render Keep-Alive
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is alive!"
+
+def run():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
 
 TOKEN = '8915748936:AAH5R5fGkW3hLXXCVn3_q1RFBq0p4kGN9Zw'
 
@@ -37,6 +55,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await query.message.reply_text("📞 সহায়তার জন্য যোগাযোগ করুন: @marufbhai075")
 
 def main() -> None:
+    keep_alive()  # Start the Web Server
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button_click))
@@ -44,4 +63,4 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
-  
+    
