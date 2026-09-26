@@ -8,6 +8,9 @@ from flask import Flask
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
+# --- ADMIN CONFIGURATION ---
+ADMIN_IDS = [6347427263, 6992868111]  # উভয় অ্যাডমিন আইডি যুক্ত করা হয়েছে
+
 # --- Flask Server Setup for Render Uptime ---
 app = Flask(__name__)
 
@@ -71,13 +74,12 @@ def add_balance(user_id, amount):
 
 # --- API Configurations ---
 API_KEY = "VALT2H"
-API_URL = "https://api.your-smm-panel.com/api/v2"  # <--- আপনার SMM প্যানেলের আসল API লিংকটি এখানে বসান
+API_URL = "https://api.your-smm-panel.com/api/v2"  # <--- আপনার SMM প্যানেলের মূল API লিংকটি এখানে বসান
 SERVICE_ID_100 = "1"
 DAILY_RATE = 8.0  # ১০০ লাইকের দাম ৮ টাকা
 
 # --- Auto Like Scheduler Loop ---
 def auto_like_scheduler(bot_application):
-    """ব্যাকগ্রাউন্ডে নির্দিষ্ট সময়ে অটোমেটিক লাইক পাঠানোর প্রসেস"""
     while True:
         try:
             now = datetime.now()
@@ -393,6 +395,98 @@ async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(msg, parse_mode='Markdown')
 
+# --- ADMIN PANEL COMMANDS ---
+async def admin_add_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+
+    if len(context.args) < 2:
+        await update.message.reply_text("❌ ব্যবহারবিধি: `/addbalance <User_ID> <পরিমাণ>`", parse_mode='Markdown')
+        return
+
+    try:
+        target_user = int(context.args[0])
+        amount = float(context.args[1])
+        add_balance(target_user, amount)
+        new_bal = get_balance(target_user)
+        
+        await update.message.reply_text(f"✅ User ID: `{target_user}` -এর ওয়ালেটে {amount} BDT যোগ করা হয়েছে।\nবর্তমান ব্যালেন্স: {new_bal} BDT", parse_mode='Markdown')
+        
+        try:
+            await context.bot.send_message(
+                chat_id=target_user,
+                text=f"🎉 **ব্যালেন্স আপডেট!**\n\nআপনার ওয়ালেটে {amount} BDT যোগ করা হয়েছে।\nবর্তমান ওয়ালেট ব্যালেন্স: {new_bal} BDT",
+                parse_mode='Markdown'
+            )
+        except Exception:
+            pass
+    except ValueError:
+        await update.message.reply_text("❌ সঠিক সংখ্যা লিখুন।")
+
+async def admin_cut_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+
+    if len(context.args) < 2:
+        await update.message.reply_text("❌ ব্যবহারবিধি: `/cutbalance <User_ID> <পরিমাণ>`", parse_mode='Markdown')
+        return
+
+    try:
+        target_user = int(context.args[0])
+        amount = float(context.args[1])
+        add_balance(target_user, -amount)
+        new_bal = get_balance(target_user)
+        
+        await update.message.reply_text(f"✅ User ID: `{target_user}` -এর অ্যাকাউন্ট থেকে {amount} BDT কাটা হয়েছে।\nবর্তমান ব্যালেন্স: {new_bal} BDT", parse_mode='Markdown')
+    except ValueError:
+        await update.message.reply_text("❌ সঠিক সংখ্যা লিখুন।")
+
+async def admin_check_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+
+    if not context.args:
+        await update.message.reply_text("❌ ব্যবহারবিধি: `/checkuser <User_ID>`", parse_mode='Markdown')
+        return
+
+    try:
+        target_user = int(context.args[0])
+        bal = get_balance(target_user)
+        await update.message.reply_text(f"👤 **ইউজার তথ্য:**\n\n🆔 User ID: `{target_user}`\n💰 ব্যালেন্স: {bal} BDT", parse_mode='Markdown')
+    except ValueError:
+        await update.message.reply_text("❌ সঠিক ID প্রদান করুন।")
+
+async def admin_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+
+    if not context.args:
+        await update.message.reply_text("❌ ব্যবহারবিধি: `/broadcast <আপনার বার্তা>`", parse_mode='Markdown')
+        return
+
+    msg_text = " ".join(context.args)
+    conn = sqlite3.connect('bot_database.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT user_id FROM users')
+    users = cursor.fetchall()
+    conn.close()
+
+    success, failed = 0, 0
+    await update.message.reply_text("⏳ মেসেজ পাঠানো শুরু হচ্ছে...")
+
+    for u in users:
+        try:
+            await context.bot.send_message(chat_id=u[0], text=f"📢 **নোটিশ:**\n\n{msg_text}", parse_mode='Markdown')
+            success += 1
+        except Exception:
+            failed += 1
+
+    await update.message.reply_text(f"✅ ব্রডকাস্ট সম্পন্ন!\n\nসফল: {success} জন\nব্যর্থ: {failed} জন")
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -416,35 +510,4 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Main Bot Execution ---
 def run_bot():
     init_db()
-    TOKEN = "8915748936:AAEJw_iwXbnuMQzrEIAJF163iRPe-30rlpY"
-    application = Application.builder().token(TOKEN).build()
-
-    # Register Handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("like", like_command))
-    application.add_handler(CommandHandler("add", add_package_command))
-    application.add_handler(CommandHandler("time", time_command))
-    application.add_handler(CommandHandler("number", number_command))
-    application.add_handler(CommandHandler("rate", rate_command))
-    application.add_handler(CommandHandler("balance", balance_command))
-    application.add_handler(CommandHandler("verify", verify_command))
-    application.add_handler(CommandHandler("usage", usage_command))
-    application.add_handler(CallbackQueryHandler(button_handler))
-
-    # Set Menu Commands for Telegram Blue Clickable Links
-    async def post_init(app):
-        await set_bot_commands(app)
-
-    application.post_init = post_init
-
-    # Start Background Auto Like Scheduler Thread
-    threading.Thread(target=auto_like_scheduler, args=(application,), daemon=True).start()
-
-    print("Telegram Bot Started Successfully!")
-    application.run_polling(drop_pending_updates=True)
-
-if __name__ == "__main__":
-    threading.Thread(target=run_flask, daemon=True).start()
-    run_bot()
-            
+    TOKEN = "891574
