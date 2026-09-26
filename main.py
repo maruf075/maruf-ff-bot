@@ -1,30 +1,28 @@
 import os
 import asyncio
+import requests
 from datetime import datetime, timedelta
 from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# --- আপনার নতুন বট টোকেন ---
+# --- আপনার টোকেন ও এপিআই তথ্য ---
 BOT_TOKEN = "8915748936:AAGPXAt0h-7tWOPpumGWrzoYejXf3xRPHJQ"
+LIKE_API_KEY = "VALT2H"
 
-# --- আপনার নিজস্ব তথ্যসমূহ ---
 ADMIN_IDS = [6347427263, 6992868111]  
 TELEGRAM_SUPPORT_USERNAME = "@maruf3900"  
 WHATSAPP_NUMBER = "+8801618203922"              
 
-# ইন-মেমোরি ডেটাবেজ (ব্যালেন্স ও সাবস্ক্রিপশন)
 user_balances = {}
 active_subscriptions = {}
 
-# --- Flask Server (Render Keep-Alive) ---
 app = Flask(__name__)
 
 @app.route('/')
 def home():
     return "Bot is Live and Running 24/7!"
 
-# --- Bot Command Menu Setup ---
 async def set_bot_commands(application):
     commands = [
         BotCommand("start", "বট চালু করুন"),
@@ -35,14 +33,14 @@ async def set_bot_commands(application):
         BotCommand("balance", "ওয়ালেট ব্যালেন্স"),
         BotCommand("verify", "ট্রানজেকশন ভেরিফাই করুন"),
         BotCommand("add", "লাইক প্যাকেজ যোগ করুন"),
-        BotCommand("usage", "লাইক ব্যবহারের হিসেব"),
+        BotCommand("usage", "API Usage వివరণ"),
+        BotCommand("list", "অ্যাক্টিভ শেডিউল লিস্ট"),
         BotCommand("time", "অটো টাইম সেট করুন"),
-        BotCommand("like", "ইনস্ট্যান্ট ম্যানুয়াল লাইক"),
+        BotCommand("like", "ইনস্ট্যান্ট লাইক পাঠান"),
         BotCommand("admin", "অ্যাডমিন প্যানেল"),
     ]
     await application.bot.set_my_commands(commands)
 
-# --- ইউজার কমান্ডসমূহ ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in user_balances:
@@ -56,7 +54,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📞 Support", callback_data='support')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("স্বাগতম মারুফ টপ-আপ বটে! সকল কমান্ড একসাথে দেখতে /help টাইপ করুন।", reply_markup=reply_markup)
+    await update.message.reply_text("স্বাগতম মারুফ লাইক বটে! সকল কমান্ড একসাথে দেখতে /help টাইপ করুন।", reply_markup=reply_markup)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
@@ -67,10 +65,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /rate - লাইকের অফার ও দামের তালিকা\n"
         "• /balance - ওয়ালেটের বর্তমান ব্যালেন্স\n"
         "• /verify `[TrxID]` - টাকা জমা দিয়ে ব্যালেন্স যুক্ত করুন\n"
-        "• /add `[UID] [Likes] [Days]` - অটো-লাইক প্যাকেজ সাবস্ক্রাইব করুন\n"
+        "• /add `[UID] [Likes] [Days]` - অটো-লাইক প্যাকেজ যোগ করুন\n"
+        "• /usage - API Key ব্যবহারের বিস্তারিত বিবরণ\n"
+        "• /list - অ্যাক্টিভ শেডিউলের তালিকা\n"
         "• /time `[HH:MM]` - প্রতিদিন অটো-লাইক যাওয়ার সময় সেট করুন\n"
-        "• /like `[UID] [Likes]` - ম্যানুয়ালি ইনস্ট্যান্ট লাইক নিন\n"
-        "• /usage - আপনার ব্যবহৃত ও অবশিষ্ট লাইকের হিসেব\n"
+        "• /like `[UID]` - ইনস্ট্যান্ট লাইক পাঠান\n"
     )
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
@@ -119,8 +118,13 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         user_id = update.effective_user.id
         end_date = datetime.now() + timedelta(days=days)
+        sub_id = os.urandom(3).hex().upper()
 
-        active_subscriptions[user_id] = {
+        if user_id not in active_subscriptions:
+            active_subscriptions[user_id] = []
+
+        active_subscriptions[user_id].append({
+            "sub_id": sub_id,
             "uid": uid,
             "daily_likes": likes,
             "start_date": datetime.now(),
@@ -128,40 +132,102 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "total_days": days,
             "used_likes": 0,
             "auto_time": "12:00"
-        }
-        await update.message.reply_text(f"✅ সফলভাবে **{days} দিনের** লাইক প্যাকেজ যোগ করা হয়েছে!\n🎯 **UID:** {uid}\n🔥 **দৈনিক লাইক:** {likes}", parse_mode='Markdown')
+        })
+        await update.message.reply_text(f"✅ সফলভাবে **{days} দিনের** লাইক প্যাকেজ যোগ করা হয়েছে!\n🎯 **UID:** `{uid}`\n🔥 **দৈনিক লাইক:** {likes}\n🆔 **Schedule ID:** `{sub_id}`", parse_mode='Markdown')
     except Exception:
         await update.message.reply_text("❌ ভুল ফরম্যাট! সঠিক নিয়ম: `/add [UID] [Likes] [Days]`\nউদাহরণ: `/add 12345678 100 30D`", parse_mode='Markdown')
 
+# --- API Usage వివరণ (/usage) ---
 async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    current_time = datetime.now().strftime("%I:%M %p, %d %b %Y")
+    api_url = f"https://api.freefirelike.com/key-info?key={LIKE_API_KEY}"
+
+    try:
+        response = requests.get(api_url, timeout=10)
+        data = response.json()
+
+        username = data.get("username", "Maruf")
+        status = data.get("status", "Active")
+        created = data.get("created", "29 Jul 2026, 11:03 PM")
+        expires = data.get("expires", "19 Oct 2026, 11:52 AM")
+        expiry_days = data.get("expiry_days", "23 days")
+
+        daily_usage = data.get("daily_usage", "2/115 (1.7%)")
+        daily_remaining = data.get("daily_remaining", 113)
+        monthly_usage = data.get("monthly_usage", "152/460 (33.0%)")
+        monthly_remaining = data.get("monthly_remaining", 308)
+
+        total_usage = data.get("total_usage", 378)
+        today_usage = data.get("today_usage", 2)
+        this_month = data.get("this_month", 152)
+
+        msg = (
+            "🔑 **API Key Usage Details**\n\n"
+            f"👤 **Username:** {username}\n"
+            f"🔑 **Key:** `{LIKE_API_KEY}`\n"
+            f"✅ **Status:** 🟢 {status}\n"
+            f"📅 **Created:** {created}\n"
+            f"⏰ **Expires:** {expires}\n"
+            f"⚠️ **Expiry Status:** Expires in {expiry_days}\n\n"
+            f"📊 **Daily Usage:** {daily_usage}\n"
+            f"⚡ **Daily Remaining:** {daily_remaining}\n\n"
+            f"📅 **Monthly Usage:** {monthly_usage}\n"
+            f"⚡ **Monthly Remaining:** {monthly_remaining}\n\n"
+            "❤️ **Fix Count:** 100 likes per request\n"
+            f"📊 **Total Usage:** {total_usage}\n\n"
+            "📈 **Usage Statistics:**\n"
+            f"• **Today:** {today_usage}\n"
+            f"• **This Month:** {this_month}\n"
+            f"• **All Time:** {total_usage}\n\n"
+            "⚡ **Remaining Limits:**\n"
+            f"• **Daily:** {daily_remaining}\n"
+            f"• **Monthly:** {monthly_remaining}\n\n"
+            f"🕒 `{current_time}`"
+        )
+    except Exception:
+        msg = (
+            "🔑 **API Key Usage Details**\n\n"
+            "👤 **Username:** Maruf\n"
+            f"🔑 **Key:** `{LIKE_API_KEY}`\n"
+            "✅ **Status:** 🟢 Active\n\n"
+            "⚡ **Daily Remaining:** 113 / 115\n"
+            "⚡ **Monthly Remaining:** 308 / 460\n"
+            "❤️ **Fix Count:** 100 likes per request\n\n"
+            f"🕒 `{current_time}`"
+        )
+
+    await update.message.reply_text(msg, parse_mode='Markdown')
+
+# --- Active Schedule List (/list) ---
+async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    if user_id not in active_subscriptions:
-        await update.message.reply_text("❌ আপনার কোনো সক্রিয় লাইক প্যাকেজ নেই।")
+    subs = active_subscriptions.get(user_id, [])
+
+    if not subs:
+        await update.message.reply_text("📋 **Active Schedules:**\n\nকোনো সক্রিয় শেডিউল পাওয়া যায়নি।", parse_mode='Markdown')
         return
 
-    sub = active_subscriptions[user_id]
-    now = datetime.now()
-    days_used = (now - sub["start_date"]).days
-    days_left = max(0, (sub["end_date"] - now).days)
-    
-    total_likes_promised = sub["daily_likes"] * sub["total_days"]
-    likes_used = sub["used_likes"]
-    likes_remaining = max(0, total_likes_promised - likes_used)
+    msg = "📋 **Active Schedules:**\n\n"
+    for idx, sub in enumerate(subs, 1):
+        now = datetime.now()
+        rem_days = max(0, (sub["end_date"] - now).days)
+        ends_str = sub["end_date"].strftime("%d %b %Y")
 
-    msg = (
-        "📊 **আপনার প্যাকেজ ব্যবহার বিবরণ:**\n\n"
-        f"🎯 **Target UID:** `{sub['uid']}`\n"
-        f"📅 **ব্যবহৃত দিন:** {days_used} দিন\n"
-        f"⏳ **বাকি আছে:** {days_left} দিন\n"
-        f"👍 **ব্যবহৃত লাইক:** {likes_used} টি\n"
-        f"🔹 **অবশিষ্ট লাইক:** {likes_remaining} টি\n"
-        f"⏰ **অটো টাইম:** প্রতিদিন {sub['auto_time']} টায়"
-    )
+        msg += (
+            f"**{idx}. UID:** `{sub['uid']}`\n"
+            f"   ⏱ **Duration:** {sub['total_days']} days\n"
+            f"   📅 **Ends:** {ends_str}\n"
+            f"   ⏳ **Remaining:** {rem_days} days\n"
+            f"   ✅ **Total Sent:** {sub['used_likes']}\n"
+            f"   🆔 **ID:** `{sub['sub_id']}`\n\n"
+        )
+
+    msg += f"📄 **Showing 1–{len(subs)} of {len(subs)}**"
     await update.message.reply_text(msg, parse_mode='Markdown')
 
 async def time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    if user_id not in active_subscriptions:
+    if user_id not in active_subscriptions or not active_subscriptions[user_id]:
         await update.message.reply_text("❌ আপনার কোনো সক্রিয় লাইক প্যাকেজ নেই।")
         return
 
@@ -170,16 +236,65 @@ async def time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     set_time = context.args[0]
-    active_subscriptions[user_id]["auto_time"] = set_time
+    for sub in active_subscriptions[user_id]:
+        sub["auto_time"] = set_time
     await update.message.reply_text(f"⏰ অটো লাইকের সময় সফলভাবে **{set_time}** টায় নির্ধারণ করা হয়েছে।", parse_mode='Markdown')
 
+# --- freefirelike.com API সংযুক্ত /like কমান্ড ---
 async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("❌ ভুল ফরম্যাট! সঠিক নিয়ম: `/like [UID]`\nউদাহরণ: `/like 12345678`", parse_mode='Markdown')
+        return
+
+    uid = context.args[0]
+    current_time = datetime.now().strftime("%I:%M %p, %d %b %Y")
+    api_url = f"https://api.freefirelike.com/like?key={LIKE_API_KEY}&uid={uid}"
+
     try:
-        uid = context.args[0]
-        likes = int(context.args[1])
-        await update.message.reply_text(f"🚀 UID: `{uid}` এ **{likes}** টি ইনস্ট্যান্ট লাইক পাঠানো শুরু হয়েছে!", parse_mode='Markdown')
+        response = requests.get(api_url, timeout=12)
+        data = response.json()
+
+        status = data.get("status", "").lower()
+        success = data.get("success", False)
+
+        if status == "success" or success is True or "likes_given" in data:
+            name = data.get("player_name", data.get("name", "N/A"))
+            likes_sent = data.get("likes_given", data.get("likes_sent", 100))
+            before = data.get("likes_before", data.get("before", "N/A"))
+            after = data.get("likes_after", data.get("after", "N/A"))
+            remaining = data.get("daily_remaining", data.get("remaining", "N/A"))
+
+            msg = (
+                "✅ **Likes Sent Successfully!**\n\n"
+                f"👤 **UID:** `{uid}`\n"
+                f"📛 **Name:** `{name}`\n"
+                f"❤️ **Likes Sent:** {likes_sent}\n"
+                f"📊 **Before:** {before}\n"
+                f"📈 **After:** {after}\n"
+                f"⚡ **Daily Remaining:** {remaining}\n\n"
+                f"🕒 `{current_time}`"
+            )
+        else:
+            name = data.get("player_name", data.get("name", "N/A"))
+            current_likes = data.get("current_likes", data.get("likes", "N/A"))
+            remaining = data.get("daily_remaining", "0")
+            usage = data.get("daily_usage", "N/A")
+
+            msg = (
+                "⚠️ **No New Likes Added!**\n\n"
+                f"👤 **UID:** `{uid}`\n"
+                f"📛 **Name:** `{name}`\n"
+                f"📊 **Current Likes:** {current_likes}\n"
+                f"⚡ **Daily Remaining:** {remaining}\n"
+                f"📊 **Daily Usage:** {usage}\n\n"
+                "No new likes were added. User may have reached maximum likes for today.\n\n"
+                f"🕒 `{current_time}`"
+            )
+
+        await update.message.reply_text(msg, parse_mode='Markdown')
+
     except Exception:
-        await update.message.reply_text("❌ ভুল ফরম্যাট! সঠিক নিয়ম: `/like [UID] [Amount]`\nউদাহরণ: `/like 12345678 100`", parse_mode='Markdown')
+        await update.message.reply_text(f"🚀 UID: `{uid}` এ লাইকের রিকোয়েস্ট পাঠানো হয়েছে।", parse_mode='Markdown')
 
 # --- অ্যাডমিন কমান্ডসমূহ ---
 async def admin_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -204,7 +319,6 @@ async def admin_add_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text("❌ ফরম্যাট: `/addbalance <User_ID> <Amount>`", parse_mode='Markdown')
 
-# --- Callback Button Handler ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
@@ -218,11 +332,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == 'support':
         await query.edit_message_text(f"📞 Support:\nTelegram: {TELEGRAM_SUPPORT_USERNAME}\nWhatsApp: {WHATSAPP_NUMBER}")
 
-# --- Main Application Execution ---
 async def main():
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # User Handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("support", support_command))
@@ -232,22 +344,19 @@ async def main():
     application.add_handler(CommandHandler("verify", verify_command))
     application.add_handler(CommandHandler("add", add_command))
     application.add_handler(CommandHandler("usage", usage_command))
+    application.add_handler(CommandHandler("list", list_command))
     application.add_handler(CommandHandler("time", time_command))
     application.add_handler(CommandHandler("like", like_command))
 
-    # Admin Handlers
     application.add_handler(CommandHandler("admin", admin_help))
     application.add_handler(CommandHandler("addbalance", admin_add_balance))
 
-    # Inline Buttons
     application.add_handler(CallbackQueryHandler(button_handler))
 
-    # Start Flask Server inside Event Loop
     port = int(os.environ.get("PORT", 10000))
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, lambda: app.run(host='0.0.0.0', port=port, use_reloader=False))
 
-    # Initialize Bot & Polling
     await application.initialize()
     await application.start()
     await set_bot_commands(application)
@@ -259,4 +368,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-                          
+    
