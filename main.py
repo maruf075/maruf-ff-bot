@@ -1,6 +1,5 @@
 import os
 import asyncio
-import threading
 from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -14,7 +13,7 @@ def home():
 
 # --- Database & Core Functions ---
 def init_db():
-    pass  # আপনার ডাটাবেস ইনিশিয়ালাইজেশন কোড থাকলে এখানে থাকবে
+    pass
 
 async def set_bot_commands(application):
     commands = [
@@ -27,7 +26,7 @@ async def set_bot_commands(application):
 
 async def auto_like_scheduler(application):
     while True:
-        await asyncio.sleep(60)  # অটো লাইক বা ব্যাকগ্রাউন্ড টাস্ক প্রসেসিং
+        await asyncio.sleep(60)
 
 # --- Telegram Command Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -89,17 +88,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.edit_message_text(f"আপনি নির্বাচন করেছেন: {query.data}")
 
-# --- Background Thread for Telegram Bot ---
-def start_bot_thread():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
+# --- Main Async Runner ---
+async def main():
     init_db()
     TOKEN = "8915748936:AAEJw_iwXbnuMQzrEIAJF163iRPe-30rlpY"
     
     application = Application.builder().token(TOKEN).build()
 
-    # Register Handlers
+    # Handlers Registration
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("like", like_command))
@@ -118,20 +114,21 @@ def start_bot_thread():
 
     application.add_handler(CallbackQueryHandler(button_handler))
 
-    async def post_init(app_obj):
-        await set_bot_commands(app_obj)
-        asyncio.create_task(auto_like_scheduler(app_obj))
-
-    application.post_init = post_init
-
-    print("Telegram Bot Started...")
-    application.run_polling(drop_pending_updates=True, close_loop=False)
-
-# ব্যাকগ্রাউন্ডে বট থ্রেড রান করা
-threading.Thread(target=start_bot_thread, daemon=True).start()
-
-# --- Main Entry Point for Flask ---
-if __name__ == "__main__":
+    # Start Flask Server in Background Task
     port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, lambda: app.run(host='0.0.0.0', port=port, use_reloader=False))
+
+    # Initialize and Start Telegram Bot
+    await application.initialize()
+    await application.start()
+    await set_bot_commands(application)
+    asyncio.create_task(auto_like_scheduler(application))
+    await application.updater.start_polling(drop_pending_updates=True)
+    
+    print("Telegram Bot Started Successfully!")
+    await asyncio.Event().wait()
+
+if __name__ == "__main__":
+    asyncio.run(main())
     
