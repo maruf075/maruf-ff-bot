@@ -139,7 +139,6 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text("❌ ভুল ফরম্যাট! সঠিক নিয়ম: `/add [UID] [Likes] [Days]`\nউদাহরণ: `/add 12345678 100 30D`", parse_mode='Markdown')
 
-# --- শেডিউল ডিলিট করার কমান্ড (/delete) ---
 async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not context.args:
@@ -157,7 +156,6 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"❌ Schedule ID `{sub_id_to_delete}` খুঁজে পাওয়া যায়নি! আপনার সঠিক ID দেখতে `/list` লিখুন।", parse_mode='Markdown')
 
-# --- API Usage details (/usage) ---
 async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_time = datetime.now().strftime("%I:%M %p, %d %b %Y")
     api_url = f"https://api.freefirelike.com/details?key={LIKE_API_KEY}"
@@ -174,9 +172,9 @@ async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             expiry_days = data.get("expiry_days", "N/A")
 
             daily_usage = data.get("daily_usage", "N/A")
-            daily_remaining = data.get("daily_remaining", 113)
+            daily_remaining = data.get("daily_remaining", "N/A")
             monthly_usage = data.get("monthly_usage", "N/A")
-            monthly_remaining = data.get("monthly_remaining", 308)
+            monthly_remaining = data.get("monthly_remaining", "N/A")
 
             total_usage = data.get("total_usage", 0)
             today_usage = data.get("today_usage", 0)
@@ -200,9 +198,6 @@ async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"• **Today:** {today_usage}\n"
                 f"• **This Month:** {this_month}\n"
                 f"• **All Time:** {total_usage}\n\n"
-                "⚡ **Remaining Limits:**\n"
-                f"• **Daily:** {daily_remaining}\n"
-                f"• **Monthly:** {monthly_remaining}\n\n"
                 f"🕒 `{current_time}`"
             )
         else:
@@ -213,15 +208,11 @@ async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "👤 **Username:** Maruf\n"
             f"🔑 **Key:** `{LIKE_API_KEY}`\n"
             "✅ **Status:** 🟢 Active\n\n"
-            "⚡ **Daily Remaining:** 113 / 115\n"
-            "⚡ **Monthly Remaining:** 308 / 460\n"
-            "❤️ **Fix Count:** 100 likes per request\n\n"
             f"🕒 `{current_time}`"
         )
 
     await update.message.reply_text(msg, parse_mode='Markdown')
 
-# --- Active Schedule List (/list) ---
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     subs = active_subscriptions.get(user_id, [])
@@ -263,7 +254,7 @@ async def time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sub["auto_time"] = set_time
     await update.message.reply_text(f"⏰ অটো লাইকের সময় সফলভাবে **{set_time}** টায় নির্ধারণ করা হয়েছে।", parse_mode='Markdown')
 
-# --- /like কমান্ড ---
+# --- /like ফিক্সড ফাংশন (গেম আইডির নাম ফেচিং উন্নত করা হয়েছে) ---
 async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("❌ ভুল ফরম্যাট! সঠিক নিয়ম: `/like [UID]`\nউদাহরণ: `/like 12345678`", parse_mode='Markdown')
@@ -272,7 +263,8 @@ async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = str(context.args[0]).strip()
     current_time = datetime.now().strftime("%I:%M %p, %d %b %Y")
     
-    api_url = f"https://api.freefirelike.com/like?key={LIKE_API_KEY}&uid={uid}"
+    # region=ind কোড যোগ করা হলো প্লেয়ার নাম ঠিকমতো পাওয়ার জন্য
+    api_url = f"https://api.freefirelike.com/like?key={LIKE_API_KEY}&uid={uid}&region=ind"
 
     try:
         response = requests.get(api_url, timeout=15)
@@ -280,11 +272,20 @@ async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if response.status_code == 200:
             data = response.json()
             
+            # প্লেয়ার নাম পাওয়ার জন্য সকল সম্ভাব্য Key চেক
+            name = (
+                data.get("player_name") or 
+                data.get("name") or 
+                data.get("nickname") or 
+                data.get("player") or 
+                data.get("ign") or 
+                "N/A"
+            )
+
             status = str(data.get("status", "")).lower()
             success = data.get("success", False)
 
             if status == "success" or success is True or "likes_given" in data or "likes_after" in data:
-                name = data.get("player_name", data.get("name", "Player"))
                 likes_sent = data.get("likes_given", data.get("likes_sent", 100))
                 before = data.get("likes_before", data.get("before", "N/A"))
                 after = data.get("likes_after", data.get("after", "N/A"))
@@ -302,7 +303,6 @@ async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"🕒 `{current_time}`"
                 )
             else:
-                name = data.get("player_name", data.get("name", "Player"))
                 current_likes = data.get("current_likes", data.get("likes", "N/A"))
                 msg_text = data.get("message", "Already reached daily limit for this UID")
 
@@ -396,4 +396,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-        
+    
