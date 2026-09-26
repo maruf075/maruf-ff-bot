@@ -11,7 +11,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 # --- ADMIN CONFIGURATION ---
 ADMIN_IDS = [6347427263, 6992868111]
 
-# --- Flask Server Setup for Render Health Checks ---
+# --- Flask Web Server Setup (Render পোর্ট বাইন্ডিংয়ের জন্য) ---
 app = Flask(__name__)
 
 @app.route('/')
@@ -509,6 +509,4 @@ def start_bot_thread():
     init_db()
     TOKEN = "8915748936:AAEJw_iwXbnuMQzrEIAJF163iRPe-30rlpY"
     
-    application = Application.builder().token(TOKEN).build()
-
-    app
+    application = Application.builder().token(TOKEN).build
