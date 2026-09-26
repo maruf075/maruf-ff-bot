@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 BOT_TOKEN = "8915748936:AAGPXAt0h-7tWOPpumGWrzoYejXf3xRPHJQ"
 LIKE_API_KEY = "VALT2H"
@@ -25,67 +24,73 @@ telegram_app = None
 def home():
     return "Bot is Live and Running 24/7!"
 
-async def process_auto_likes():
-    if not telegram_app:
-        return
+async def auto_like_checker():
+    """APScheduler ছাড়া সাধারণ ব্যাকগ্রাউন্ড টাস্ক"""
+    while True:
+        try:
+            if telegram_app:
+                bd_now = datetime.utcnow() + timedelta(hours=6)
+                current_time_str = bd_now.strftime("%H:%M")
 
-    bd_now = datetime.utcnow() + timedelta(hours=6)
-    current_time_str = bd_now.strftime("%H:%M")
+                for user_id, subs in list(active_subscriptions.items()):
+                    api_key_to_use = user_api_keys.get(user_id, LIKE_API_KEY)
 
-    for user_id, subs in list(active_subscriptions.items()):
-        api_key_to_use = user_api_keys.get(user_id, LIKE_API_KEY)
+                    for sub in list(subs):
+                        if bd_now > sub["end_date"]:
+                            subs.remove(sub)
+                            continue
 
-        for sub in list(subs):
-            if bd_now > sub["end_date"]:
-                subs.remove(sub)
-                continue
+                        if sub["auto_time"] == current_time_str:
+                            uid = sub["uid"]
+                            api_url = f"https://buykey.freefirelike.com/like?key={api_key_to_use}&uid={uid}"
+                            
+                            try:
+                                headers = {'User-Agent': 'Mozilla/5.0'}
+                                res = requests.get(api_url, headers=headers, timeout=15)
+                                time_now_str = bd_now.strftime("%I:%M %p, %d %b %Y")
 
-            if sub["auto_time"] == current_time_str:
-                uid = sub["uid"]
-                api_url = f"https://buykey.freefirelike.com/like?key={api_key_to_use}&uid={uid}"
-                
-                try:
-                    headers = {'User-Agent': 'Mozilla/5.0'}
-                    res = requests.get(api_url, headers=headers, timeout=15)
-                    time_now_str = bd_now.strftime("%I:%M %p, %d %b %Y")
+                                if res.status_code == 200:
+                                    data = res.json()
+                                    name = data.get("Name") or data.get("player_name") or data.get("name") or "N/A"
+                                    likes_given = data.get("Likes Sent") or data.get("likes_given") or 100
+                                    before = data.get("Before") or data.get("likes_before") or "N/A"
+                                    after = data.get("After") or data.get("likes_after") or "N/A"
+                                    
+                                    if likes_given or str(data.get("status", "")).lower() == "success":
+                                        sub["used_likes"] += int(likes_given)
+                                        msg = (
+                                            "⏰ **[AUTO LIKE SENT]**\n\n"
+                                            "🔥 **MARUF LIKE BOT**\n"
+                                            f"👤 **UID:** `{uid}`\n"
+                                            f"📛 **Name:** `{name}`\n"
+                                            f"❤️ **Likes Sent:** +{likes_given}\n"
+                                            f"📊 **Before:** {before}\n"
+                                            f"📈 **After:** {after}\n\n"
+                                            f"🕒 `{time_now_str}`"
+                                        )
+                                    else:
+                                        reason = data.get("Reason") or data.get("message") or "Limit reached for today"
+                                        msg = (
+                                            "⏰ **[AUTO LIKE FAILED]**\n\n"
+                                            f"🎯 **UID:** `{uid}`\n"
+                                            f"❌ **Reason:** {reason}\n\n"
+                                            f"🕒 `{time_now_str}`"
+                                        )
+                                else:
+                                    msg = f"❌ **Auto Like Error!** Status Code: {res.status_code}"
 
-                    if res.status_code == 200:
-                        data = res.json()
-                        name = data.get("Name") or data.get("player_name") or data.get("name") or "N/A"
-                        likes_given = data.get("Likes Sent") or data.get("likes_given") or 100
-                        before = data.get("Before") or data.get("likes_before") or "N/A"
-                        after = data.get("After") or data.get("likes_after") or "N/A"
-                        
-                        if likes_given or str(data.get("status", "")).lower() == "success":
-                            sub["used_likes"] += int(likes_given)
-                            msg = (
-                                "⏰ **[AUTO LIKE SENT]**\n\n"
-                                "🔥 **MARUF LIKE BOT**\n"
-                                f"👤 **UID:** `{uid}`\n"
-                                f"📛 **Name:** `{name}`\n"
-                                f"❤️ **Likes Sent:** +{likes_given}\n"
-                                f"📊 **Before:** {before}\n"
-                                f"📈 **After:** {after}\n\n"
-                                f"🕒 `{time_now_str}`"
-                            )
-                        else:
-                            reason = data.get("Reason") or data.get("message") or "Limit reached for today"
-                            msg = (
-                                "⏰ **[AUTO LIKE FAILED]**\n\n"
-                                f"🎯 **UID:** `{uid}`\n"
-                                f"❌ **Reason:** {reason}\n\n"
-                                f"🕒 `{time_now_str}`"
-                            )
-                    else:
-                        msg = f"❌ **Auto Like Error!** Status Code: {res.status_code}"
+                            except Exception as e:
+                                msg = f"❌ **Auto Like Exception:** {str(e)}"
 
-                except Exception as e:
-                    msg = f"❌ **Auto Like Exception:** {str(e)}"
-
-                try:
-                    await telegram_app.bot.send_message(chat_id=user_id, text=msg, parse_mode='Markdown')
-                except Exception:
-                    pass
+                            try:
+                                await telegram_app.bot.send_message(chat_id=user_id, text=msg, parse_mode='Markdown')
+                            except Exception:
+                                pass
+        except Exception:
+            pass
+        
+        # প্রতি ৩০ সেকেন্ড পর পর সময় চেক করবে
+        await asyncio.sleep(30)
 
 async def set_bot_commands(application):
     commands = [
@@ -323,7 +328,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-async def run_flask():
+def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port, use_reloader=False)
 
@@ -337,7 +342,7 @@ async def main():
     telegram_app.add_handler(CommandHandler("support", support_command))
     telegram_app.add_handler(CommandHandler("number", number_command))
     telegram_app.add_handler(CommandHandler("rate", rate_command))
-    telegram_app.add_handler(CommandHandler("balance", balance_command))
+    telegram_app.add,handler(CommandHandler("balance", balance_command))
     telegram_app.add_handler(CommandHandler("verify", verify_command))
     telegram_app.add_handler(CommandHandler("add", add_command))
     telegram_app.add_handler(CommandHandler("delete", delete_command))
@@ -348,11 +353,12 @@ async def main():
     telegram_app.add_handler(CommandHandler("admin", admin_command))
     telegram_app.add_handler(CallbackQueryHandler(button_handler))
 
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(process_auto_likes, 'cron', second=0)
-    scheduler.start()
+    # ব্যাকগ্রাউন্ড চেকার চালু
+    asyncio.create_task(auto_like_checker())
 
-    asyncio.create_task(asyncio.to_thread(run_flask))
+    # Flask সার্ভার চালু
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, run_flask)
 
     await telegram_app.initialize()
     await telegram_app.start()
@@ -365,4 +371,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-                    
+                                        
