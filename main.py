@@ -1,15 +1,14 @@
-import threading
+import asyncio
 import os
 import sqlite3
 import requests
-import time
 from datetime import datetime, timedelta
 from flask import Flask
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 # --- ADMIN CONFIGURATION ---
-ADMIN_IDS = [6347427263, 6992868111]  # উভয় অ্যাডমিন আইডি যুক্ত করা হয়েছে
+ADMIN_IDS = [6347427263, 6992868111]
 
 # --- Flask Server Setup for Render Uptime ---
 app = Flask(__name__)
@@ -74,8 +73,8 @@ API_URL = "https://api.your-smm-panel.com/api/v2"  # <--- আপনার SMM �
 SERVICE_ID_100 = "1"
 DAILY_RATE = 8.0  # ১০০ লাইকের দাম ৮ টাকা
 
-# --- Auto Like Scheduler Loop ---
-def auto_like_scheduler(bot_application):
+# --- Async Auto Like Scheduler Loop ---
+async def auto_like_scheduler(bot_application):
     while True:
         try:
             now = datetime.now()
@@ -109,12 +108,10 @@ def auto_like_scheduler(bot_application):
                         if "order" in res:
                             cursor.execute('UPDATE subscriptions SET last_sent_date = ? WHERE id = ?', (current_date_str, sub_id))
                             conn.commit()
-                            bot_application.create_task(
-                                bot_application.bot.send_message(
-                                    chat_id=user_id,
-                                    text=f"🤖 **অটো-লাইক আপডেট!**\n\n🎮 UID: `{uid}`-এ নির্ধারিত সময় ({pref_time})-এ ১০০ লাইক সফলভাবে পাঠানো হয়েছে।",
-                                    parse_mode='Markdown'
-                                )
+                            await bot_application.bot.send_message(
+                                chat_id=user_id,
+                                text=f"🤖 **অটো-লাইক আপডেট!**\n\n🎮 UID: `{uid}`-এ নির্ধারিত সময় ({pref_time})-এ ১০০ লাইক সফলভাবে পাঠানো হয়েছে।",
+                                parse_mode='Markdown'
                             )
                     except Exception as e:
                         print(f"Auto like failed for UID {uid}: {e}")
@@ -123,7 +120,7 @@ def auto_like_scheduler(bot_application):
         except Exception as e:
             print(f"Scheduler error: {e}")
         
-        time.sleep(60)
+        await asyncio.sleep(60)
 
 # --- Set Telegram Menu Commands Automatically ---
 async def set_bot_commands(application):
@@ -503,8 +500,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await query.message.reply_text(support_text)
 
-# --- Main Bot Execution ---
-def start_bot():
+# --- Main Async Runner for Render ---
+async def main():
     init_db()
     TOKEN = "8915748936:AAEJw_iwXbnuMQzrEIAJF163iRPe-30rlpY"
-    application = Application.builder().token(TOKEN).build(
+    
+    application = Application.builder().token(TOKEN).build()
+
+    # Handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHa
