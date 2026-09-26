@@ -254,7 +254,7 @@ async def time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sub["auto_time"] = set_time
     await update.message.reply_text(f"⏰ অটো লাইকের সময় সফলভাবে **{set_time}** টায় নির্ধারণ করা হয়েছে।", parse_mode='Markdown')
 
-# --- /like ফিক্সড ফাংশন (গেম আইডির নাম ফেচিং উন্নত করা হয়েছে) ---
+# --- /like রিকোয়েস্ট (উন্নত ও ফিক্সড ভার্সন) ---
 async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("❌ ভুল ফরম্যাট! সঠিক নিয়ম: `/like [UID]`\nউদাহরণ: `/like 12345678`", parse_mode='Markdown')
@@ -263,34 +263,34 @@ async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = str(context.args[0]).strip()
     current_time = datetime.now().strftime("%I:%M %p, %d %b %Y")
     
-    # region=ind কোড যোগ করা হলো প্লেয়ার নাম ঠিকমতো পাওয়ার জন্য
-    api_url = f"https://api.freefirelike.com/like?key={LIKE_API_KEY}&uid={uid}&region=ind"
+    # আসল API এন্ডপয়েন্ট
+    api_url = f"https://api.freefirelike.com/like?key={LIKE_API_KEY}&uid={uid}"
 
     try:
-        response = requests.get(api_url, timeout=15)
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(api_url, headers=headers, timeout=15)
         
         if response.status_code == 200:
             data = response.json()
             
-            # প্লেয়ার নাম পাওয়ার জন্য সকল সম্ভাব্য Key চেক
+            # নাম খুঁজে বের করার মাল্টিপল ফিল্ড সিস্টেম
             name = (
+                data.get("Name") or 
                 data.get("player_name") or 
                 data.get("name") or 
                 data.get("nickname") or 
-                data.get("player") or 
-                data.get("ign") or 
+                data.get("Player") or
                 "N/A"
             )
 
-            status = str(data.get("status", "")).lower()
-            success = data.get("success", False)
+            # লাইক সাকসেস চেক
+            likes_given = data.get("Likes Sent") or data.get("likes_given") or data.get("likes_sent")
+            before = data.get("Before") or data.get("likes_before") or data.get("before") or "N/A"
+            after = data.get("After") or data.get("likes_after") or data.get("after") or "N/A"
+            daily_rem = data.get("Daily Remaining") or data.get("daily_remaining") or "N/A"
 
-            if status == "success" or success is True or "likes_given" in data or "likes_after" in data:
-                likes_sent = data.get("likes_given", data.get("likes_sent", 100))
-                before = data.get("likes_before", data.get("before", "N/A"))
-                after = data.get("likes_after", data.get("after", "N/A"))
-                remaining = data.get("daily_remaining", data.get("remaining", "N/A"))
-
+            if likes_given or str(data.get("status", "")).lower() == "success":
+                likes_sent = likes_given if likes_given else 100
                 msg = (
                     "🔥 **MARUF LIKE BOT**\n\n"
                     "✅ **Likes Sent Successfully!**\n\n"
@@ -299,12 +299,13 @@ async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"❤️ **Likes Sent:** +{likes_sent}\n"
                     f"📊 **Before:** {before}\n"
                     f"📈 **After:** {after}\n"
-                    f"⚡ **Daily Remaining:** {remaining}\n\n"
+                    f"⚡ **Daily Remaining:** {daily_rem}\n\n"
                     f"🕒 `{current_time}`"
                 )
             else:
-                current_likes = data.get("current_likes", data.get("likes", "N/A"))
-                msg_text = data.get("message", "Already reached daily limit for this UID")
+                # যদি লাইক না যায় (যেমন গেম লিমিট শেষ হয়ে থাকলে)
+                current_likes = data.get("Current Likes") or data.get("current_likes") or "N/A"
+                reason = data.get("Reason") or data.get("message") or "No new likes were added."
 
                 msg = (
                     "🔥 **MARUF LIKE BOT**\n\n"
@@ -312,7 +313,7 @@ async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"🎯 **UID:** `{uid}`\n"
                     f"📛 **Name:** `{name}`\n"
                     f"📊 **Current Likes:** {current_likes}\n"
-                    f"❌ **Reason:** {msg_text}\n\n"
+                    f"❌ **Reason:** {reason}\n\n"
                     f"🕒 `{current_time}`"
                 )
         else:
@@ -396,4 +397,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    
+        
