@@ -24,8 +24,28 @@ telegram_app = None
 def home():
     return "Bot is Live and Running 24/7!"
 
+def send_like_request(api_key, uid):
+    """API থেকে লাইক পাঠানোর জন্য মাল্টিপল এ্যান্ডপয়েন্ট ট্রাই করার ফাংশন"""
+    endpoints = [
+        f"https://key.like.mlbbshop.com/like?key={api_key}&uid={uid}",
+        f"https://freefirelike.com/api/like?key={api_key}&uid={uid}",
+        f"https://buykey.freefirelike.com/like?key={api_key}&uid={uid}"
+    ]
+    
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    
+    for url in endpoints:
+        try:
+            res = requests.get(url, headers=headers, timeout=15)
+            if res.status_code == 200:
+                return res.json(), 200
+        except Exception:
+            continue
+            
+    return None, 404
+
 async def auto_like_checker():
-    """APScheduler ছাড়া সাধারণ ব্যাকগ্রাউন্ড টাস্ক"""
+    """অটোমেটিক লাইক চেকার টাস্ক"""
     while True:
         try:
             if telegram_app:
@@ -42,45 +62,37 @@ async def auto_like_checker():
 
                         if sub["auto_time"] == current_time_str:
                             uid = sub["uid"]
-                            api_url = f"https://buykey.freefirelike.com/like?key={api_key_to_use}&uid={uid}"
-                            
-                            try:
-                                headers = {'User-Agent': 'Mozilla/5.0'}
-                                res = requests.get(api_url, headers=headers, timeout=15)
-                                time_now_str = bd_now.strftime("%I:%M %p, %d %b %Y")
+                            data, status = send_like_request(api_key_to_use, uid)
+                            time_now_str = bd_now.strftime("%I:%M %p, %d %b %Y")
 
-                                if res.status_code == 200:
-                                    data = res.json()
-                                    name = data.get("Name") or data.get("player_name") or data.get("name") or "N/A"
-                                    likes_given = data.get("Likes Sent") or data.get("likes_given") or 100
-                                    before = data.get("Before") or data.get("likes_before") or "N/A"
-                                    after = data.get("After") or data.get("likes_after") or "N/A"
-                                    
-                                    if likes_given or str(data.get("status", "")).lower() == "success":
-                                        sub["used_likes"] += int(likes_given)
-                                        msg = (
-                                            "⏰ **[AUTO LIKE SENT]**\n\n"
-                                            "🔥 **MARUF LIKE BOT**\n"
-                                            f"👤 **UID:** `{uid}`\n"
-                                            f"📛 **Name:** `{name}`\n"
-                                            f"❤️ **Likes Sent:** +{likes_given}\n"
-                                            f"📊 **Before:** {before}\n"
-                                            f"📈 **After:** {after}\n\n"
-                                            f"🕒 `{time_now_str}`"
-                                        )
-                                    else:
-                                        reason = data.get("Reason") or data.get("message") or "Limit reached for today"
-                                        msg = (
-                                            "⏰ **[AUTO LIKE FAILED]**\n\n"
-                                            f"🎯 **UID:** `{uid}`\n"
-                                            f"❌ **Reason:** {reason}\n\n"
-                                            f"🕒 `{time_now_str}`"
-                                        )
+                            if status == 200 and data:
+                                name = data.get("Name") or data.get("player_name") or data.get("name") or "N/A"
+                                likes_given = data.get("Likes Sent") or data.get("likes_given") or 100
+                                before = data.get("Before") or data.get("likes_before") or "N/A"
+                                after = data.get("After") or data.get("likes_after") or "N/A"
+                                
+                                if likes_given or str(data.get("status", "")).lower() == "success":
+                                    sub["used_likes"] += int(likes_given)
+                                    msg = (
+                                        "⏰ **[AUTO LIKE SENT]**\n\n"
+                                        "🔥 **MARUF LIKE BOT**\n"
+                                        f"👤 **UID:** `{uid}`\n"
+                                        f"📛 **Name:** `{name}`\n"
+                                        f"❤️ **Likes Sent:** +{likes_given}\n"
+                                        f"📊 **Before:** {before}\n"
+                                        f"📈 **After:** {after}\n\n"
+                                        f"🕒 `{time_now_str}`"
+                                    )
                                 else:
-                                    msg = f"❌ **Auto Like Error!** Status Code: {res.status_code}"
-
-                            except Exception as e:
-                                msg = f"❌ **Auto Like Exception:** {str(e)}"
+                                    reason = data.get("Reason") or data.get("message") or "Limit reached for today"
+                                    msg = (
+                                        "⏰ **[AUTO LIKE FAILED]**\n\n"
+                                        f"🎯 **UID:** `{uid}`\n"
+                                        f"❌ **Reason:** {reason}\n\n"
+                                        f"🕒 `{time_now_str}`"
+                                    )
+                            else:
+                                msg = f"❌ **Auto Like Error!** API Server Response Fail."
 
                             try:
                                 await telegram_app.bot.send_message(chat_id=user_id, text=msg, parse_mode='Markdown')
@@ -258,50 +270,42 @@ async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bd_now = datetime.utcnow() + timedelta(hours=6)
     current_time = bd_now.strftime("%I:%M %p, %d %b %Y")
     
-    api_url = f"https://buykey.freefirelike.com/like?key={api_key_to_use}&uid={uid}"
+    data, status = send_like_request(api_key_to_use, uid)
 
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(api_url, headers=headers, timeout=15)
-        
-        if response.status_code == 200:
-            data = response.json()
-            name = data.get("Name") or data.get("player_name") or data.get("name") or "N/A"
-            likes_given = data.get("Likes Sent") or data.get("likes_given") or 100
-            before = data.get("Before") or data.get("likes_before") or "N/A"
-            after = data.get("After") or data.get("likes_after") or "N/A"
-            daily_rem = data.get("Daily Remaining") or data.get("daily_remaining") or "N/A"
+    if status == 200 and data:
+        name = data.get("Name") or data.get("player_name") or data.get("name") or "N/A"
+        likes_given = data.get("Likes Sent") or data.get("likes_given") or 100
+        before = data.get("Before") or data.get("likes_before") or "N/A"
+        after = data.get("After") or data.get("likes_after") or "N/A"
+        daily_rem = data.get("Daily Remaining") or data.get("daily_remaining") or "N/A"
 
-            if likes_given or str(data.get("status", "")).lower() == "success":
-                msg = (
-                    "🔥 **MARUF LIKE BOT**\n\n"
-                    "✅ **Likes Sent Successfully!**\n\n"
-                    f"👤 **UID:** `{uid}`\n"
-                    f"📛 **Name:** `{name}`\n"
-                    f"❤️ **Likes Sent:** +{likes_given}\n"
-                    f"📊 **Before:** {before}\n"
-                    f"📈 **After:** {after}\n"
-                    f"⚡ **Daily Remaining:** {daily_rem}\n\n"
-                    f"🕒 `{current_time}`"
-                )
-            else:
-                current_likes = data.get("Current Likes") or data.get("current_likes") or "N/A"
-                reason = data.get("Reason") or data.get("message") or "No new likes added"
-
-                msg = (
-                    "🔥 **MARUF LIKE BOT**\n\n"
-                    "⚠️ **No New Likes Added!**\n\n"
-                    f"🎯 **UID:** `{uid}`\n"
-                    f"📛 **Name:** `{name}`\n"
-                    f"📊 **Current Likes:** {current_likes}\n"
-                    f"❌ **Reason:** {reason}\n\n"
-                    f"🕒 `{current_time}`"
-                )
+        if likes_given or str(data.get("status", "")).lower() == "success":
+            msg = (
+                "🔥 **MARUF LIKE BOT**\n\n"
+                "✅ **Likes Sent Successfully!**\n\n"
+                f"👤 **UID:** `{uid}`\n"
+                f"📛 **Name:** `{name}`\n"
+                f"❤️ **Likes Sent:** +{likes_given}\n"
+                f"📊 **Before:** {before}\n"
+                f"📈 **After:** {after}\n"
+                f"⚡ **Daily Remaining:** {daily_rem}\n\n"
+                f"🕒 `{current_time}`"
+            )
         else:
-            msg = f"❌ **API Error!** Status Code: {response.status_code}"
+            current_likes = data.get("Current Likes") or data.get("current_likes") or "N/A"
+            reason = data.get("Reason") or data.get("message") or "No new likes added"
 
-    except Exception as e:
-        msg = f"❌ **Connection Error:** {str(e)}"
+            msg = (
+                "🔥 **MARUF LIKE BOT**\n\n"
+                "⚠️ **No New Likes Added!**\n\n"
+                f"🎯 **UID:** `{uid}`\n"
+                f"📛 **Name:** `{name}`\n"
+                f"📊 **Current Likes:** {current_likes}\n"
+                f"❌ **Reason:** {reason}\n\n"
+                f"🕒 `{current_time}`"
+            )
+    else:
+        msg = f"❌ **API Error! Status Code: 404**\n\nসার্ভার লিংক পাওয়া যায়নি অথবা আপনার API Key বন্ধ। আপনার লাইক প্রোভাইডারের থেকে সঠিক Key ও URL লিংক সংগ্রহ করুন।"
 
     await update.message.reply_text(msg, parse_mode='Markdown')
 
@@ -347,7 +351,11 @@ async def main():
     telegram_app.add_handler(CommandHandler("delete", delete_command))
     telegram_app.add_handler(CommandHandler("usage", usage_command))
     telegram_app.add_handler(CommandHandler("time", time_command))
+    
+    # ছোট ও বড় হাতের উভয় কমান্ড হ্যান্ডলার
     telegram_app.add_handler(CommandHandler("like", like_command))
+    telegram_app.add_handler(CommandHandler("Like", like_command))
+    
     telegram_app.add_handler(CommandHandler("list", list_command))
     telegram_app.add_handler(CommandHandler("admin", admin_command))
     telegram_app.add_handler(CallbackQueryHandler(button_handler))
@@ -370,4 +378,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-                                                                   
+                                
