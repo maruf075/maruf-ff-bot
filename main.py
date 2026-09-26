@@ -12,6 +12,7 @@ LIKE_API_KEY = "VALT2H"
 
 ADMIN_IDS = [6347427263, 6992868111]  
 TELEGRAM_SUPPORT_USERNAME = "@maruf3900"  
+WHATSAPP_NUMBER = "+8801618203922"              
 
 user_balances = {}
 active_subscriptions = {}
@@ -95,11 +96,14 @@ async def set_bot_commands(application):
         BotCommand("number", "পেমেন্ট নম্বর"),
         BotCommand("rate", "লাইকের রেট লিস্ট"),
         BotCommand("balance", "ওয়ালেট ব্যালেন্স"),
+        BotCommand("verify", "ট্রানজেকশন ভেরিফাই করুন"),
         BotCommand("add", "লাইক প্যাকেজ যোগ করুন"),
         BotCommand("delete", "শেডিউল ডিলিট করুন"),
+        BotCommand("usage", "API Usage বিবরণ"),
         BotCommand("list", "অ্যাক্টিভ শেডিউল লিস্ট"),
         BotCommand("time", "অটো টাইম সেট করুন"),
         BotCommand("like", "ইনস্ট্যান্ট লাইক পাঠান"),
+        BotCommand("admin", "অ্যাডমিন প্যানেল"),
     ]
     await application.bot.set_my_commands(commands)
 
@@ -116,7 +120,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📞 Support", callback_data='support')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("স্বাগতম মারুফ লাইক বটে! সকল কমান্ড দেখতে /help টাইপ করুন।", reply_markup=reply_markup)
+    await update.message.reply_text("স্বাগতম মারুফ লাইক বটে! সকল কমান্ড একসাথে দেখতে /help টাইপ করুন।", reply_markup=reply_markup)
 
 async def key_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -133,13 +137,44 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         "📜 **বটের সকল কমান্ডের তালিকা:**\n\n"
         "• /key `[KEY]` - API Key সেট করুন\n"
-        "• /help - কমান্ড তালিকা\n"
-        "• /add `[UID] [Likes] [Days]` - প্যাকেজ যোগ করুন\n"
-        "• /list - শেডিউল তালিকা\n"
-        "• /time `[HH:MM]` - সময় সেট করুন (২৪ ঘণ্টা ফরম্যাট)\n"
-        "• /like `[UID]` - ম্যানুয়াল লাইক পাঠান\n"
+        "• /help - সকল কমান্ডের তালিকা দেখাবে\n"
+        "• /support - কাস্টমার সাপোর্ট তথ্য দেখাবে\n"
+        "• /number - বিকাশ/নগদ পেমেন্ট নম্বর\n"
+        "• /rate - লাইকের অফার ও দামের তালিকা\n"
+        "• /balance - ওয়ালেটের বর্তমান ব্যালেন্স\n"
+        "• /verify `[TrxID]` - টাকা জমা দিয়ে ব্যালেন্স যুক্ত করুন\n"
+        "• /add `[UID] [Likes] [Days]` - অটো-লাইক প্যাকেজ যোগ করুন\n"
+        "• /delete `[Schedule_ID]` - রানিং শেডিউল ডিলিট করুন\n"
+        "• /usage - API Key ব্যবহারের বিস্তারিত বিবরণ\n"
+        "• /list - অ্যাক্টিভ শেডিউলের তালিকা\n"
+        "• /time `[HH:MM]` - প্রতিদিন অটো-লাইক যাওয়ার সময় সেট করুন\n"
+        "• /like `[UID]` - ইনস্ট্যান্ট লাইক পাঠান\n"
+        "• /admin - অ্যাডমিন কন্ট্রোল প্যানেল\n"
     )
     await update.message.reply_text(help_text, parse_mode='Markdown')
+
+async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = f"📞 **Customer Support:**\nTelegram: {TELEGRAM_SUPPORT_USERNAME}\nWhatsApp: {WHATSAPP_NUMBER}"
+    await update.message.reply_text(msg)
+
+async def number_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = "💳 **Payment Numbers:**\nbKash/Nagad Personal: `01618203922`"
+    await update.message.reply_text(msg, parse_mode='Markdown')
+
+async def rate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = "🔥 **Like Offer Rates:**\n• 100 Likes/Day (7 Days) - 50 BDT\n• 100 Likes/Day (30 Days) - 180 BDT"
+    await update.message.reply_text(msg)
+
+async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    bal = user_balances.get(user_id, 0.0)
+    await update.message.reply_text(f"💳 আপনার বর্তমান ওয়ালেট ব্যালেন্স: **{bal} BDT**", parse_mode='Markdown')
+
+async def verify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("❌ ট্রানজেকশন আইডি প্রদান করুন! উদাহরণ: `/verify 9X82K10L`", parse_mode='Markdown')
+        return
+    await update.message.reply_text("⏳ আপনার ট্রানজেকশন ভেরিফাই করা হচ্ছে, অনুগ্রহ করে অপেক্ষা করুন।")
 
 async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -168,6 +203,22 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"✅ সফলভাবে **{days} দিনের** লাইক প্যাকেজ যোগ করা হয়েছে!\n🎯 **UID:** `{uid}`\n🔥 **দৈনিক লাইক:** {likes}\n🆔 **Schedule ID:** `{sub_id}`", parse_mode='Markdown')
     except Exception:
         await update.message.reply_text("❌ ভুল ফরম্যাট! সঠিক নিয়ম: `/add [UID] [Likes] [Days]`\nউদাহরণ: `/add 12345678 100 30D`", parse_mode='Markdown')
+
+async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("❌ Schedule ID দিন! উদাহরণ: `/delete 2D7919`", parse_mode='Markdown')
+        return
+    sub_id = context.args[0].strip().upper()
+    user_id = update.effective_user.id
+    subs = active_subscriptions.get(user_id, [])
+    
+    active_subscriptions[user_id] = [s for s in subs if s['sub_id'] != sub_id]
+    await update.message.reply_text(f"🗑️ Schedule ID `{sub_id}` সফলভাবে ডিলিট করা হয়েছে।", parse_mode='Markdown')
+
+async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    api_key_to_use = user_api_keys.get(user_id, LIKE_API_KEY)
+    await update.message.reply_text(f"📊 **API Key:** `{api_key_to_use}`\nStatus: **Active**", parse_mode='Markdown')
 
 async def time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -261,6 +312,13 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg += f"**{idx}. UID:** `{sub['uid']}` | **Auto Time:** `{sub['auto_time']}`\n"
     await update.message.reply_text(msg, parse_mode='Markdown')
 
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        await update.message.reply_text("❌ আপনি অ্যাডমিন নন!")
+        return
+    await update.message.reply_text("⚙️ **Admin Panel Active!**")
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -276,17 +334,24 @@ async def main():
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(CommandHandler("help", help_command))
     telegram_app.add_handler(CommandHandler("key", key_command))
+    telegram_app.add_handler(CommandHandler("support", support_command))
+    telegram_app.add_handler(CommandHandler("number", number_command))
+    telegram_app.add_handler(CommandHandler("rate", rate_command))
+    telegram_app.add_handler(CommandHandler("balance", balance_command))
+    telegram_app.add_handler(CommandHandler("verify", verify_command))
     telegram_app.add_handler(CommandHandler("add", add_command))
+    telegram_app.add_handler(CommandHandler("delete", delete_command))
+    telegram_app.add_handler(CommandHandler("usage", usage_command))
     telegram_app.add_handler(CommandHandler("time", time_command))
     telegram_app.add_handler(CommandHandler("like", like_command))
     telegram_app.add_handler(CommandHandler("list", list_command))
+    telegram_app.add_handler(CommandHandler("admin", admin_command))
     telegram_app.add_handler(CallbackQueryHandler(button_handler))
 
     scheduler = AsyncIOScheduler()
     scheduler.add_job(process_auto_likes, 'cron', second=0)
     scheduler.start()
 
-    # Flask ব্যাকগ্রাউন্ডে চালু রাখার জন্য
     asyncio.create_task(asyncio.to_thread(run_flask))
 
     await telegram_app.initialize()
@@ -300,4 +365,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-            
+                    
