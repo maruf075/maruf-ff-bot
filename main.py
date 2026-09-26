@@ -89,7 +89,6 @@ async def auto_like_checker():
         except Exception:
             pass
         
-        # প্রতি ৩০ সেকেন্ড পর পর সময় চেক করবে
         await asyncio.sleep(30)
 
 async def set_bot_commands(application):
@@ -342,7 +341,7 @@ async def main():
     telegram_app.add_handler(CommandHandler("support", support_command))
     telegram_app.add_handler(CommandHandler("number", number_command))
     telegram_app.add_handler(CommandHandler("rate", rate_command))
-    telegram_app.add,handler(CommandHandler("balance", balance_command))
+    telegram_app.add_handler(CommandHandler("balance", balance_command))
     telegram_app.add_handler(CommandHandler("verify", verify_command))
     telegram_app.add_handler(CommandHandler("add", add_command))
     telegram_app.add_handler(CommandHandler("delete", delete_command))
@@ -371,4 +370,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-                                        
+                                                                   
