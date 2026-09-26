@@ -2,9 +2,10 @@ import threading
 import os
 import sqlite3
 import requests
+import time
 from datetime import datetime, timedelta
 from flask import Flask
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 # --- Flask Server Setup for Render Uptime ---
@@ -42,7 +43,9 @@ def init_db():
             uid TEXT,
             days INTEGER,
             start_date TEXT,
-            end_date TEXT
+            end_date TEXT,
+            preferred_time TEXT DEFAULT '12:00',
+            last_sent_date TEXT DEFAULT ''
         )
     ''')
     conn.commit()
@@ -66,13 +69,81 @@ def add_balance(user_id, amount):
     conn.commit()
     conn.close()
 
-# API Configurations
+# --- API Configurations ---
 API_KEY = "VALT2H"
-API_URL = "https://YOUR-SMM-PROVIDER-DOMAIN.com/api/v2"  # আপনার API লিঙ্ক
+API_URL = "https://api.your-smm-panel.com/api/v2"  # <--- আপনার SMM প্যানেলের আসল API লিংকটি এখানে বসান
 SERVICE_ID_100 = "1"
-DAILY_RATE = 8.0  # প্রতিদিনের লাইকের দাম (৮ টাকা)
+DAILY_RATE = 8.0  # ১০০ লাইকের দাম ৮ টাকা
 
-# --- Telegram Bot Logic ---
+# --- Auto Like Scheduler Loop ---
+def auto_like_scheduler(bot_application):
+    """ব্যাকগ্রাউন্ডে নির্দিষ্ট সময়ে অটোমেটিক লাইক পাঠানোর প্রসেস"""
+    while True:
+        try:
+            now = datetime.now()
+            current_time_str = now.strftime("%H:%M")
+            current_date_str = now.strftime("%Y-%m-%d")
+
+            conn = sqlite3.connect('bot_database.db')
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, user_id, uid, end_date, preferred_time, last_sent_date 
+                FROM subscriptions 
+                WHERE preferred_time = ? AND last_sent_date != ?
+            ''', (current_time_str, current_date_str))
+            
+            subs = cursor.fetchall()
+
+            for sub in subs:
+                sub_id, user_id, uid, end_str, pref_time, last_sent = sub
+                end_date = datetime.strptime(end_str, "%Y-%m-%d %H:%M:%S")
+
+                if now <= end_date:
+                    payload = {
+                        'key': API_KEY,
+                        'action': 'add',
+                        'service': SERVICE_ID_100,
+                        'link': uid,
+                        'quantity': 100
+                    }
+                    try:
+                        res = requests.post(API_URL, data=payload).json()
+                        if "order" in res:
+                            cursor.execute('UPDATE subscriptions SET last_sent_date = ? WHERE id = ?', (current_date_str, sub_id))
+                            conn.commit()
+                            bot_application.create_task(
+                                bot_application.bot.send_message(
+                                    chat_id=user_id,
+                                    text=f"🤖 **অটো-লাইক আপডেট!**\n\n🎮 UID: `{uid}`-এ নির্ধারিত সময় ({pref_time})-এ ১০০ লাইক সফলভাবে পাঠানো হয়েছে।",
+                                    parse_mode='Markdown'
+                                )
+                            )
+                    except Exception as e:
+                        print(f"Auto like failed for UID {uid}: {e}")
+
+            conn.close()
+        except Exception as e:
+            print(f"Scheduler error: {e}")
+        
+        time.sleep(60)
+
+# --- Set Telegram Menu Commands Automatically ---
+async def set_bot_commands(application):
+    commands = [
+        BotCommand("start", "বট চালু করতে"),
+        BotCommand("help", "সাহায্য ও কমান্ড তালিকা"),
+        BotCommand("like", "ইনস্ট্যান্ট ১০০ লাইক নিতে"),
+        BotCommand("add", "লাইক প্যাকেজ সাবস্ক্রাইব করতে"),
+        BotCommand("time", "ডেইলি অটো লাইকের সময় সেট করতে"),
+        BotCommand("number", "পেমেন্ট নম্বরসমূহ দেখতে"),
+        BotCommand("rate", "লাইক ও ডায়মন্ডের দাম জানতে"),
+        BotCommand("balance", "ওয়ালেট ব্যালেন্স দেখতে"),
+        BotCommand("verify", "পেমেন্ট ট্রানজেকশন ভেরিফাই করতে"),
+        BotCommand("usage", "প্যাকেজ ব্যবহারের তথ্য দেখতে")
+    ]
+    await application.bot.set_my_commands(commands)
+
+# --- Bot Command Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     conn = sqlite3.connect('bot_database.db')
@@ -92,79 +163,63 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
-# /help Command
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         "🤖 **বটের সকল কমান্ডের তালিকা:**\n\n"
-        "• `/start` - বট চালু বা প্রারম্ভিক মেনু দেখতে\n"
-        "• `/number` - পেমেন্ট নম্বর (বিকাশ ও নগদ) দেখতে\n"
-        "• `/rate` - লাইক ও ডায়মন্ডের মূল্যের তালিকা দেখতে\n"
-        "• `/balance` - ওয়ালেটে কত টাকা আছে দেখতে\n"
-        "• `/verify <TrxID>` - পেমেন্ট ট্রানজেকশন আইডি সাবমিট ও ভেরিফাই করতে\n"
-        "• `/add <UID> <দিন>` - নির্দিষ্ট দিনের জন্য লাইক প্যাকেজ কিনতে (যেমন: `/add 123456789 30D`)\n"
-        "• `/usage` - ব্যবহৃত ও অবশিষ্টাংশের দিন দেখতে\n"
-        "• `/help` - সকল কমান্ডের তালিকা দেখতে"
+        "• /start - বট চালু বা প্রারম্ভিক মেনু\n"
+        "• /like `<UID>` - ইনস্ট্যান্ট ১০০ লাইক নিতে (দাম: ৮ BDT)\n"
+        "• /add `<UID>` `<দিন>` - নির্দিষ্ট দিনের প্যাকেজ কিনতে (যেমন: `/add 123456789 30D`)\n"
+        "• /time `<UID>` `<HH:MM>` - অটো লাইকের সময় সেট করতে (যেমন: `/time 123456789 21:30`)\n"
+        "• /number - পেমেন্ট নম্বর (বিকাশ ও নগদ) দেখতে\n"
+        "• /rate - লাইক ও ডায়মন্ডের মূল্যের তালিকা\n"
+        "• /balance - ওয়ালেটে কত টাকা আছে দেখতে\n"
+        "• /verify `<TrxID>` - পেমেন্ট ভেরিফাই করে ব্যালেন্স যোগ করতে\n"
+        "• /usage - সাবস্ক্রিপশন ব্যবহারের ইতিহাস দেখতে\n"
+        "• /help - সহায়তার জন্য নির্দেশিকা"
     )
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
-# /number Command
-async def number_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = (
-        "🔷 **পেমেন্ট নম্বরসমূহ:**\n\n"
-        "🔷 টাকা +1% সহ সেন্ড মানি করবেন।\n\n"
-        "🅱 **Bkash:** `+8801618203922`\n"
-        "🆖 **Nagad:** `+8801842408034`\n\n"
-        "⏭️ লাস্ট ৩ ডিজিট নাম্বার বলবেন। (বাধ্যতামূলক)\n"
-        "‼️ টাকা পাঠানোর ৫ মিনিটের ভিতরে জানাতে হবে।"
-    )
-    await update.message.reply_text(text, parse_mode='Markdown')
-
-# /rate Command
-async def rate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = (
-        "(👍 ‿ 👍)✍️ **Like Prices**\n"
-        "_______________________\n\n"
-        "👉 Daily Like Package ⇨ 8.0 BDT / Day\n"
-        "• `/add UID 1D` (১ দিনের জন্য)\n"
-        "• `/add UID 30D` (৩০ দিনের জন্য)\n"
-        "_______________________\n\n"
-        "💎 **Diamond Prices**\n"
-        "• 115 Diamond - 80 BDT\n"
-        "• 240 Diamond - 160 BDT"
-    )
-    await update.message.reply_text(text, parse_mode='Markdown')
-
-# /balance Command
-async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     bal = get_balance(user_id)
-    await update.message.reply_text(f"💰 আপনার বর্তমান ওয়ালেট ব্যালেন্স: {bal} BDT")
-
-# /verify Command
-async def verify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    
     if not context.args:
-        await update.message.reply_text("❌ অনুগ্রহ করে TrxID প্রদান করুন।\nউদাহরণ: `/verify BLK9823X1`", parse_mode='Markdown')
+        await update.message.reply_text("❌ অনুগ্রহ করে UID প্রদান করুন।\nউদাহরণ: `/like 123456789`", parse_mode='Markdown')
         return
 
-    trx_id = context.args[0].strip().upper()
+    if bal < DAILY_RATE:
+        await update.message.reply_text(f"❌ আপনার ওয়ালেটে পর্যাপ্ত ব্যালেন্স নেই!\n\nপ্রয়োজন: {DAILY_RATE} BDT\nবর্তমান ব্যালেন্স: {bal} BDT\n/number কমান্ড দিয়ে টাকা রিচার্জ করুন।")
+        return
+
+    uid = context.args[0]
+    await update.message.reply_text(f"⏳ UID: `{uid}` -এ ১০০ লাইকের ইনস্ট্যান্ট রিকোয়েস্ট প্রসেস করা হচ্ছে...", parse_mode='Markdown')
+
+    payload = {
+        'key': API_KEY,
+        'action': 'add',
+        'service': SERVICE_ID_100,
+        'link': uid,
+        'quantity': 100
+    }
     
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT status FROM transactions WHERE trx_id = ?', (trx_id,))
-    row = cursor.fetchone()
-
-    if row:
-        if row[0] == 'used':
-            await update.message.reply_text("❌ এই TrxID-টি ইতিপূর্বে ব্যবহার করা হয়েছে।")
+    try:
+        response = requests.post(API_URL, data=payload).json()
+        if "order" in response:
+            add_balance(user_id, -DAILY_RATE)
+            new_bal = get_balance(user_id)
+            await update.message.reply_text(
+                f"✅ **ইনস্ট্যান্ট লাইক অর্ডার সফল হয়েছে!**\n\n"
+                f"🆔 Order ID: `{response['order']}`\n"
+                f"🎮 UID: `{uid}`\n"
+                f"💰 কাটা হয়েছে: {DAILY_RATE} BDT\n"
+                f"💳 বর্তমান ব্যালেন্স: {new_bal} BDT",
+                parse_mode='Markdown'
+            )
         else:
-            await update.message.reply_text("✅ আপনার TrxID সফলভাবে ভেরিফাই হয়েছে!")
-    else:
-        cursor.execute('INSERT INTO transactions (trx_id, amount, status) VALUES (?, 0, "pending")', (trx_id,))
-        conn.commit()
-        await update.message.reply_text(f"⏳ আপনার TrxID `{trx_id}` ভেরিফিকেশনের জন্য গ্রহণ করা হয়েছে। অল্প সময়ের মধ্যেই ওয়ালেটে টাকা যোগ হয়ে যাবে।", parse_mode='Markdown')
-    conn.close()
+            await update.message.reply_text(f"❌ অর্ডার ব্যর্থ হয়েছে। কারণ: {response.get('error', 'অজানা সমস্যা')}")
+    except Exception as e:
+        await update.message.reply_text("❌ সার্ভার প্রোভাইডারের সাথে সংযোগ করা যাচ্ছে না।")
 
-# /add UID 1D /add UID 30D Command
 async def add_package_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
@@ -193,8 +248,8 @@ async def add_package_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     conn = sqlite3.connect('bot_database.db')
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO subscriptions (user_id, uid, days, start_date, end_date)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO subscriptions (user_id, uid, days, start_date, end_date, preferred_time)
+        VALUES (?, ?, ?, ?, ?, '12:00')
     ''', (user_id, uid, days, start_date.strftime("%Y-%m-%d %H:%M:%S"), end_date.strftime("%Y-%m-%d %H:%M:%S")))
     conn.commit()
     conn.close()
@@ -206,18 +261,101 @@ async def add_package_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"🎮 UID: `{uid}`\n"
         f"📅 মেয়াদ: {days} দিন\n"
         f"💰 মোট খরচ: {total_cost} BDT\n"
+        f"⏰ অটো-লাইক টাইম: `12:00` (ডিফল্ট)\n"
         f"⏳ শেষ হওয়ার তারিখ: {end_date.strftime('%d-%m-%Y')}\n\n"
-        f"ব্যবহার দেখতে `/usage` চাপুন।",
+        f"💡 সময় পরিবর্তন করতে লিখুন: `/time {uid} 21:30` (আপনার পছন্দমতো সময়)",
         parse_mode='Markdown'
     )
 
-# /usage Command
+async def time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    if len(context.args) < 2:
+        await update.message.reply_text("❌ সঠিক নিয়মে লিখুন:\n`/time <UID> <HH:MM>`\n\nউদাহরণ (রাত ৯:৩০ টা): `/time 123456789 21:30`", parse_mode='Markdown')
+        return
+
+    uid = context.args[0]
+    time_str = context.args[1]
+
+    try:
+        datetime.strptime(time_str, "%H:%M")
+    except ValueError:
+        await update.message.reply_text("❌ ভুল টাইম ফরম্যাট! ২৪ ঘণ্টার সময় ফরম্যাট ব্যবহার করুন (যেমন: `09:00`, `15:30`, `21:00`)", parse_mode='Markdown')
+        return
+
+    conn = sqlite3.connect('bot_database.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT id FROM subscriptions WHERE user_id = ? AND uid = ? ORDER BY id DESC LIMIT 1', (user_id, uid))
+    row = cursor.fetchone()
+
+    if row:
+        cursor.execute('UPDATE subscriptions SET preferred_time = ? WHERE id = ?', (time_str, row[0]))
+        conn.commit()
+        await update.message.reply_text(f"⏰ **সময় সফলভাবে আপডেট হয়েছে!**\n\n🎮 UID: `{uid}`\n⏰ এখন প্রতিদিন ঠিক `{time_str}` টায় অটো-লাইক চলে যাবে।", parse_mode='Markdown')
+    else:
+        await update.message.reply_text(f"❌ UID: `{uid}`-এর জন্য কোনো সক্রিয় প্যাকেজ খুঁজে পাওয়া যায়নি। প্রথমে `/add` দিয়ে প্যাকেজ কিনুন।", parse_mode='Markdown')
+    
+    conn.close()
+
+async def number_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = (
+        "🔷 **পেমেন্ট নম্বরসমূহ:**\n\n"
+        "🔷 টাকা +1% সহ সেন্ড মানি করবেন।\n\n"
+        "🅱 **Bkash:** `+8801618203922`\n"
+        "🆖 **Nagad:** `+8801842408034`\n\n"
+        "⏭️ লাস্ট ৩ ডিজিট নাম্বার বলবেন। (বাধ্যতামূলক)\n"
+        "‼️ টাকা পাঠানোর ৫ মিনিটের ভিতরে জানাতে হবে।"
+    )
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+async def rate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = (
+        "(👍 ‿ 👍)✍️ **Like Prices**\n"
+        "_______________________\n\n"
+        "👉 Instant Like: /like `<UID>` ⇨ 8.0 BDT / 100 Likes\n"
+        "👉 Daily Package: /add `<UID>` `30D` ⇨ 8.0 BDT / Day\n"
+        "👉 Set Daily Time: /time `<UID>` `HH:MM` (e.g. `/time 12345 21:30`)\n"
+        "_______________________\n\n"
+        "💎 **Diamond Prices**\n"
+        "• 115 Diamond - 80 BDT\n"
+        "• 240 Diamond - 160 BDT"
+    )
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    bal = get_balance(user_id)
+    await update.message.reply_text(f"💰 আপনার বর্তমান ওয়ালেট ব্যালেন্স: {bal} BDT")
+
+async def verify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("❌ অনুগ্রহ করে TrxID প্রদান করুন।\nউদাহরণ: `/verify BLK9823X1`", parse_mode='Markdown')
+        return
+
+    trx_id = context.args[0].strip().upper()
+    
+    conn = sqlite3.connect('bot_database.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT status FROM transactions WHERE trx_id = ?', (trx_id,))
+    row = cursor.fetchone()
+
+    if row:
+        if row[0] == 'used':
+            await update.message.reply_text("❌ এই TrxID-টি ইতিপূর্বে ব্যবহার করা হয়েছে।")
+        else:
+            await update.message.reply_text("✅ আপনার TrxID সফলভাবে ভেরিফাই হয়েছে!")
+    else:
+        cursor.execute('INSERT INTO transactions (trx_id, amount, status) VALUES (?, 0, "pending")', (trx_id,))
+        conn.commit()
+        await update.message.reply_text(f"⏳ আপনার TrxID `{trx_id}` ভেরিফিকেশনের জন্য গ্রহণ করা হয়েছে। অল্প সময়ের মধ্যেই ওয়ালেটে টাকা যোগ হয়ে যাবে।", parse_mode='Markdown')
+    conn.close()
+
 async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
     conn = sqlite3.connect('bot_database.db')
     cursor = conn.cursor()
-    cursor.execute('SELECT uid, days, start_date, end_date FROM subscriptions WHERE user_id = ? ORDER BY id DESC', (user_id,))
+    cursor.execute('SELECT uid, days, start_date, end_date, preferred_time FROM subscriptions WHERE user_id = ? ORDER BY id DESC', (user_id,))
     subs = cursor.fetchall()
     conn.close()
 
@@ -229,7 +367,7 @@ async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     now = datetime.now()
 
     for sub in subs:
-        uid, days, start_str, end_str = sub
+        uid, days, start_str, end_str, pref_time = sub
         start_date = datetime.strptime(start_str, "%Y-%m-%d %H:%M:%S")
         end_date = datetime.strptime(end_str, "%Y-%m-%d %H:%M:%S")
 
@@ -247,6 +385,7 @@ async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg += (
             f"🎮 UID: `{uid}`\n"
             f"📌 স্ট্যাটাস: {status}\n"
+            f"⏰ ডেইলি টাইম: `{pref_time}`\n"
             f"⏱️ ব্যবহৃত হয়েছে: {used_days} দিন\n"
             f"⏳ বাকি আছে: {remaining_days} দিন\n"
             f"_______________________\n"
@@ -259,19 +398,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user_id = query.from_user.id
 
-    if query.data == 'ff_like':
+    if query.data in ['ff_like', 'ff_diamond']:
         await rate_command(update, context)
-
-    elif query.data == 'ff_diamond':
-        await rate_command(update, context)
-
     elif query.data == 'balance':
         bal = get_balance(user_id)
         await query.message.reply_text(f"💰 আপনার বর্তমান ওয়ালেট ব্যালেন্স: {bal} BDT")
-
     elif query.data == 'deposit':
         await number_command(update, context)
-
     elif query.data == 'support':
         support_text = (
             "📞 সহায়তার জন্য যোগাযোগ করুন:\n\n"
@@ -280,25 +413,38 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await query.message.reply_text(support_text)
 
+# --- Main Bot Execution ---
 def run_bot():
     init_db()
     TOKEN = "8915748936:AAEJw_iwXbnuMQzrEIAJF163iRPe-30rlpY"
     application = Application.builder().token(TOKEN).build()
 
+    # Register Handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("like", like_command))
+    application.add_handler(CommandHandler("add", add_package_command))
+    application.add_handler(CommandHandler("time", time_command))
     application.add_handler(CommandHandler("number", number_command))
     application.add_handler(CommandHandler("rate", rate_command))
     application.add_handler(CommandHandler("balance", balance_command))
     application.add_handler(CommandHandler("verify", verify_command))
-    application.add_handler(CommandHandler("add", add_package_command))
     application.add_handler(CommandHandler("usage", usage_command))
     application.add_handler(CallbackQueryHandler(button_handler))
 
-    print("Telegram Bot Polling Started...")
+    # Set Menu Commands for Telegram Blue Clickable Links
+    async def post_init(app):
+        await set_bot_commands(app)
+
+    application.post_init = post_init
+
+    # Start Background Auto Like Scheduler Thread
+    threading.Thread(target=auto_like_scheduler, args=(application,), daemon=True).start()
+
+    print("Telegram Bot Started Successfully!")
     application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
     run_bot()
-    
+            
