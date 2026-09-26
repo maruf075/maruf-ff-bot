@@ -233,8 +233,33 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    user_name = update.effective_user.first_name or "User"
     api_key_to_use = user_api_keys.get(user_id, LIKE_API_KEY)
-    await update.message.reply_text(f"📊 **API Key:** `{api_key_to_use}`\nStatus: **Active**", parse_mode='Markdown')
+    
+    bd_now = datetime.utcnow() + timedelta(hours=6)
+    current_time_str = bd_now.strftime("%I:%M %p, %d %b %Y")
+
+    # একটি টেস্ট রিকোয়েস্ট পাঠাবো API এর স্ট্যাটাস ও লিমিট চেক করতে
+    test_uid = "100000000"
+    data, status = send_like_request(api_key_to_use, test_uid)
+
+    daily_rem = "N/A"
+    status_text = "🟢 Active" if status == 200 else "🔴 Inactive/Error"
+
+    if data:
+        daily_rem = data.get("Daily Remaining") or data.get("daily_remaining") or "N/A"
+
+    msg = (
+        "🔑 **API Key Usage Details**\n\n"
+        f"👤 **Username:** {user_name}\n"
+        f"🔑 **Key:** `{api_key_to_use}`\n"
+        f"✅ **Status:** {status_text}\n\n"
+        f"⚡ **Daily Remaining:** {daily_rem}\n"
+        f"❤️ **Fix Count:** 100 likes per request\n\n"
+        f"🕒 `{current_time_str}`"
+    )
+
+    await update.message.reply_text(msg, parse_mode='Markdown')
 
 async def time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -352,7 +377,6 @@ async def main():
     telegram_app.add_handler(CommandHandler("usage", usage_command))
     telegram_app.add_handler(CommandHandler("time", time_command))
     
-    # ছোট ও বড় হাতের উভয় কমান্ড হ্যান্ডলার
     telegram_app.add_handler(CommandHandler("like", like_command))
     telegram_app.add_handler(CommandHandler("Like", like_command))
     
@@ -360,10 +384,8 @@ async def main():
     telegram_app.add_handler(CommandHandler("admin", admin_command))
     telegram_app.add_handler(CallbackQueryHandler(button_handler))
 
-    # ব্যাকগ্রাউন্ড চেকার চালু
     asyncio.create_task(auto_like_checker())
 
-    # Flask সার্ভার চালু
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, run_flask)
 
