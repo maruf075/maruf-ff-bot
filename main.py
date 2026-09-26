@@ -7,18 +7,15 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotComm
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-# --- প্রাথমিক কনফিগারেশন ---
 BOT_TOKEN = "8915748936:AAGPXAt0h-7tWOPpumGWrzoYejXf3xRPHJQ"
-# ডিফল্ট API Key
 LIKE_API_KEY = "VALT2H"
 
 ADMIN_IDS = [6347427263, 6992868111]  
 TELEGRAM_SUPPORT_USERNAME = "@maruf3900"  
-WHATSAPP_NUMBER = "+8801618203922"              
 
 user_balances = {}
 active_subscriptions = {}
-user_api_keys = {}  # ইউজার বা গ্রুপের নিজস্ব কী সেভ রাখার জন্য
+user_api_keys = {}
 
 app = Flask(__name__)
 telegram_app = None
@@ -27,7 +24,6 @@ telegram_app = None
 def home():
     return "Bot is Live and Running 24/7!"
 
-# --- ব্যাকগ্রাউন্ড অটো-লাইক প্রসেসর ---
 async def process_auto_likes():
     if not telegram_app:
         return
@@ -36,7 +32,6 @@ async def process_auto_likes():
     current_time_str = bd_now.strftime("%H:%M")
 
     for user_id, subs in list(active_subscriptions.items()):
-        # ইউজারের কাস্টম কী থাকলে সেটা ব্যবহার করবে, না থাকলে ডিফল্ট কী
         api_key_to_use = user_api_keys.get(user_id, LIKE_API_KEY)
 
         for sub in list(subs):
@@ -97,17 +92,14 @@ async def set_bot_commands(application):
         BotCommand("help", "সকল কমান্ডের তালিকা"),
         BotCommand("key", "API Key সেট করুন"),
         BotCommand("support", "সাপোর্ট তথ্য"),
-        BotCommand("number", "পেমент নম্বর"),
+        BotCommand("number", "পেমেন্ট নম্বর"),
         BotCommand("rate", "লাইকের রেট লিস্ট"),
         BotCommand("balance", "ওয়ালেট ব্যালেন্স"),
-        BotCommand("verify", "ট্রানজেকশন ভেরিফাই করুন"),
         BotCommand("add", "লাইক প্যাকেজ যোগ করুন"),
         BotCommand("delete", "শেডিউল ডিলিট করুন"),
-        BotCommand("usage", "API Usage বিবরণ"),
         BotCommand("list", "অ্যাক্টিভ শেডিউল লিস্ট"),
         BotCommand("time", "অটো টাইম সেট করুন"),
         BotCommand("like", "ইনস্ট্যান্ট লাইক পাঠান"),
-        BotCommand("admin", "অ্যাডমিন প্যানেল"),
     ]
     await application.bot.set_my_commands(commands)
 
@@ -124,9 +116,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📞 Support", callback_data='support')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("স্বাগতম মারুফ লাইক বটে! সকল কমান্ড একসাথে দেখতে /help টাইপ করুন।", reply_markup=reply_markup)
+    await update.message.reply_text("স্বাগতম মারুফ লাইক বটে! সকল কমান্ড দেখতে /help টাইপ করুন।", reply_markup=reply_markup)
 
-# --- নতুন যুক্ত করা /key কমান্ড ---
 async def key_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not context.args:
@@ -141,19 +132,12 @@ async def key_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         "📜 **বটের সকল কমান্ডের তালিকা:**\n\n"
-        "• /key `[KEY]` - আপনার API Key সেট করুন\n"
-        "• /help - সকল কমান্ডের তালিকা দেখাবে\n"
-        "• /support - কাস্টমার সাপোর্ট তথ্য দেখাবে\n"
-        "• /number - বিকাশ/নগদ পেমেন্ট নম্বর\n"
-        "• /rate - লাইকের অফার ও দামের তালিকা\n"
-        "• /balance - ওয়ালেটের বর্তমান ব্যালেন্স\n"
-        "• /verify `[TrxID]` - টাকা জমা দিয়ে ব্যালেন্স যুক্ত করুন\n"
-        "• /add `[UID] [Likes] [Days]` - অটো-লাইক প্যাকেজ যোগ করুন\n"
-        "• /delete `[Schedule_ID]` - রানিং শেডিউল ডিলিট করুন\n"
-        "• /usage - API Key ব্যবহারের বিস্তারিত বিবরণ\n"
-        "• /list - অ্যাক্টিভ শেডিউলের তালিকা\n"
-        "• /time `[HH:MM]` - প্রতিদিন অটো-লাইক যাওয়ার সময় সেট করুন\n"
-        "• /like `[UID]` - ইনস্ট্যান্ট লাইক পাঠান\n"
+        "• /key `[KEY]` - API Key সেট করুন\n"
+        "• /help - কমান্ড তালিকা\n"
+        "• /add `[UID] [Likes] [Days]` - প্যাকেজ যোগ করুন\n"
+        "• /list - শেডিউল তালিকা\n"
+        "• /time `[HH:MM]` - সময় সেট করুন (২৪ ঘণ্টা ফরম্যাট)\n"
+        "• /like `[UID]` - ম্যানুয়াল লাইক পাঠান\n"
     )
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
@@ -281,6 +265,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
+async def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port, use_reloader=False)
+
 async def main():
     global telegram_app
     telegram_app = Application.builder().token(BOT_TOKEN).build()
@@ -298,9 +286,8 @@ async def main():
     scheduler.add_job(process_auto_likes, 'cron', second=0)
     scheduler.start()
 
-    port = int(os.environ.get("PORT", 10000))
-    loop = asyncio.get_event_loop()
-    loop.run_in_executor(None, lambda: app.run(host='0.0.0.0', port=port, use_reloader=False))
+    # Flask ব্যাকগ্রাউন্ডে চালু রাখার জন্য
+    asyncio.create_task(asyncio.to_thread(run_flask))
 
     await telegram_app.initialize()
     await telegram_app.start()
@@ -313,4 +300,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    
+            
