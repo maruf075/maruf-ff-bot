@@ -33,7 +33,8 @@ async def set_bot_commands(application):
         BotCommand("balance", "ওয়ালেট ব্যালেন্স"),
         BotCommand("verify", "ট্রানজেকশন ভেরিফাই করুন"),
         BotCommand("add", "লাইক প্যাকেজ যোগ করুন"),
-        BotCommand("usage", "API Usage వివరণ"),
+        BotCommand("delete", "শেডিউল ডিলিট করুন"),
+        BotCommand("usage", "API Usage বিবরণ"),
         BotCommand("list", "অ্যাক্টিভ শেডিউল লিস্ট"),
         BotCommand("time", "অটো টাইম সেট করুন"),
         BotCommand("like", "ইনস্ট্যান্ট লাইক পাঠান"),
@@ -66,6 +67,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /balance - ওয়ালেটের বর্তমান ব্যালেন্স\n"
         "• /verify `[TrxID]` - টাকা জমা দিয়ে ব্যালেন্স যুক্ত করুন\n"
         "• /add `[UID] [Likes] [Days]` - অটো-লাইক প্যাকেজ যোগ করুন\n"
+        "• /delete `[Schedule_ID]` - রানিং শেডিউল ডিলিট করুন\n"
         "• /usage - API Key ব্যবহারের বিস্তারিত বিবরণ\n"
         "• /list - অ্যাক্টিভ শেডিউলের তালিকা\n"
         "• /time `[HH:MM]` - প্রতিদিন অটো-লাইক যাওয়ার সময় সেট করুন\n"
@@ -137,53 +139,74 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text("❌ ভুল ফরম্যাট! সঠিক নিয়ম: `/add [UID] [Likes] [Days]`\nউদাহরণ: `/add 12345678 100 30D`", parse_mode='Markdown')
 
-# --- API Usage వివరণ (/usage) ---
+# --- শেডিউল ডিলিট করার কমান্ড (/delete) ---
+async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not context.args:
+        await update.message.reply_text("❌ ভুল ফরম্যাট! সঠিক নিয়ম: `/delete [Schedule_ID]`\nআপনার শেডিউল আইডি দেখতে `/list` টাইপ করুন।", parse_mode='Markdown')
+        return
+
+    sub_id_to_delete = context.args[0].upper().strip()
+    user_subs = active_subscriptions.get(user_id, [])
+
+    for sub in user_subs:
+        if sub["sub_id"] == sub_id_to_delete:
+            user_subs.remove(sub)
+            await update.message.reply_text(f"🗑️ সফলভাবে Schedule ID `{sub_id_to_delete}` (UID: `{sub['uid']}`) ডিলিট করা হয়েছে!", parse_mode='Markdown')
+            return
+
+    await update.message.reply_text(f"❌ Schedule ID `{sub_id_to_delete}` খুঁজে পাওয়া যায়নি! আপনার সঠিক ID দেখতে `/list` লিখুন।", parse_mode='Markdown')
+
+# --- API Usage details (/usage) ---
 async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_time = datetime.now().strftime("%I:%M %p, %d %b %Y")
-    api_url = f"https://api.freefirelike.com/key-info?key={LIKE_API_KEY}"
+    api_url = f"https://api.freefirelike.com/details?key={LIKE_API_KEY}"
 
     try:
         response = requests.get(api_url, timeout=10)
-        data = response.json()
+        if response.status_code == 200:
+            data = response.json()
 
-        username = data.get("username", "Maruf")
-        status = data.get("status", "Active")
-        created = data.get("created", "29 Jul 2026, 11:03 PM")
-        expires = data.get("expires", "19 Oct 2026, 11:52 AM")
-        expiry_days = data.get("expiry_days", "23 days")
+            username = data.get("username", "Maruf")
+            status = data.get("status", "Active")
+            created = data.get("created", "N/A")
+            expires = data.get("expires", "N/A")
+            expiry_days = data.get("expiry_days", "N/A")
 
-        daily_usage = data.get("daily_usage", "2/115 (1.7%)")
-        daily_remaining = data.get("daily_remaining", 113)
-        monthly_usage = data.get("monthly_usage", "152/460 (33.0%)")
-        monthly_remaining = data.get("monthly_remaining", 308)
+            daily_usage = data.get("daily_usage", "N/A")
+            daily_remaining = data.get("daily_remaining", 113)
+            monthly_usage = data.get("monthly_usage", "N/A")
+            monthly_remaining = data.get("monthly_remaining", 308)
 
-        total_usage = data.get("total_usage", 378)
-        today_usage = data.get("today_usage", 2)
-        this_month = data.get("this_month", 152)
+            total_usage = data.get("total_usage", 0)
+            today_usage = data.get("today_usage", 0)
+            this_month = data.get("this_month", 0)
 
-        msg = (
-            "🔑 **API Key Usage Details**\n\n"
-            f"👤 **Username:** {username}\n"
-            f"🔑 **Key:** `{LIKE_API_KEY}`\n"
-            f"✅ **Status:** 🟢 {status}\n"
-            f"📅 **Created:** {created}\n"
-            f"⏰ **Expires:** {expires}\n"
-            f"⚠️ **Expiry Status:** Expires in {expiry_days}\n\n"
-            f"📊 **Daily Usage:** {daily_usage}\n"
-            f"⚡ **Daily Remaining:** {daily_remaining}\n\n"
-            f"📅 **Monthly Usage:** {monthly_usage}\n"
-            f"⚡ **Monthly Remaining:** {monthly_remaining}\n\n"
-            "❤️ **Fix Count:** 100 likes per request\n"
-            f"📊 **Total Usage:** {total_usage}\n\n"
-            "📈 **Usage Statistics:**\n"
-            f"• **Today:** {today_usage}\n"
-            f"• **This Month:** {this_month}\n"
-            f"• **All Time:** {total_usage}\n\n"
-            "⚡ **Remaining Limits:**\n"
-            f"• **Daily:** {daily_remaining}\n"
-            f"• **Monthly:** {monthly_remaining}\n\n"
-            f"🕒 `{current_time}`"
-        )
+            msg = (
+                "🔑 **API Key Usage Details**\n\n"
+                f"👤 **Username:** {username}\n"
+                f"🔑 **Key:** `{LIKE_API_KEY}`\n"
+                f"✅ **Status:** 🟢 {status}\n"
+                f"📅 **Created:** {created}\n"
+                f"⏰ **Expires:** {expires}\n"
+                f"⚠️ **Expiry Status:** Expires in {expiry_days}\n\n"
+                f"📊 **Daily Usage:** {daily_usage}\n"
+                f"⚡ **Daily Remaining:** {daily_remaining}\n\n"
+                f"📅 **Monthly Usage:** {monthly_usage}\n"
+                f"⚡ **Monthly Remaining:** {monthly_remaining}\n\n"
+                "❤️ **Fix Count:** 100 likes per request\n"
+                f"📊 **Total Usage:** {total_usage}\n\n"
+                "📈 **Usage Statistics:**\n"
+                f"• **Today:** {today_usage}\n"
+                f"• **This Month:** {this_month}\n"
+                f"• **All Time:** {total_usage}\n\n"
+                "⚡ **Remaining Limits:**\n"
+                f"• **Daily:** {daily_remaining}\n"
+                f"• **Monthly:** {monthly_remaining}\n\n"
+                f"🕒 `{current_time}`"
+            )
+        else:
+            raise Exception("API Error")
     except Exception:
         msg = (
             "🔑 **API Key Usage Details**\n\n"
@@ -240,61 +263,65 @@ async def time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sub["auto_time"] = set_time
     await update.message.reply_text(f"⏰ অটো লাইকের সময় সফলভাবে **{set_time}** টায় নির্ধারণ করা হয়েছে।", parse_mode='Markdown')
 
-# --- freefirelike.com API সংযুক্ত /like কমান্ড ---
+# --- /like কমান্ড ---
 async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("❌ ভুল ফরম্যাট! সঠিক নিয়ম: `/like [UID]`\nউদাহরণ: `/like 12345678`", parse_mode='Markdown')
         return
 
-    uid = context.args[0]
+    uid = str(context.args[0]).strip()
     current_time = datetime.now().strftime("%I:%M %p, %d %b %Y")
+    
     api_url = f"https://api.freefirelike.com/like?key={LIKE_API_KEY}&uid={uid}"
 
     try:
-        response = requests.get(api_url, timeout=12)
-        data = response.json()
+        response = requests.get(api_url, timeout=15)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            status = str(data.get("status", "")).lower()
+            success = data.get("success", False)
 
-        status = data.get("status", "").lower()
-        success = data.get("success", False)
+            if status == "success" or success is True or "likes_given" in data or "likes_after" in data:
+                name = data.get("player_name", data.get("name", "Player"))
+                likes_sent = data.get("likes_given", data.get("likes_sent", 100))
+                before = data.get("likes_before", data.get("before", "N/A"))
+                after = data.get("likes_after", data.get("after", "N/A"))
+                remaining = data.get("daily_remaining", data.get("remaining", "N/A"))
 
-        if status == "success" or success is True or "likes_given" in data:
-            name = data.get("player_name", data.get("name", "N/A"))
-            likes_sent = data.get("likes_given", data.get("likes_sent", 100))
-            before = data.get("likes_before", data.get("before", "N/A"))
-            after = data.get("likes_after", data.get("after", "N/A"))
-            remaining = data.get("daily_remaining", data.get("remaining", "N/A"))
+                msg = (
+                    "🔥 **MARUF LIKE BOT**\n\n"
+                    "✅ **Likes Sent Successfully!**\n\n"
+                    f"👤 **UID:** `{uid}`\n"
+                    f"📛 **Name:** `{name}`\n"
+                    f"❤️ **Likes Sent:** +{likes_sent}\n"
+                    f"📊 **Before:** {before}\n"
+                    f"📈 **After:** {after}\n"
+                    f"⚡ **Daily Remaining:** {remaining}\n\n"
+                    f"🕒 `{current_time}`"
+                )
+            else:
+                name = data.get("player_name", data.get("name", "Player"))
+                current_likes = data.get("current_likes", data.get("likes", "N/A"))
+                msg_text = data.get("message", "Already reached daily limit for this UID")
 
-            msg = (
-                "✅ **Likes Sent Successfully!**\n\n"
-                f"👤 **UID:** `{uid}`\n"
-                f"📛 **Name:** `{name}`\n"
-                f"❤️ **Likes Sent:** {likes_sent}\n"
-                f"📊 **Before:** {before}\n"
-                f"📈 **After:** {after}\n"
-                f"⚡ **Daily Remaining:** {remaining}\n\n"
-                f"🕒 `{current_time}`"
-            )
+                msg = (
+                    "🔥 **MARUF LIKE BOT**\n\n"
+                    "⚠️ **No New Likes Added!**\n\n"
+                    f"🎯 **UID:** `{uid}`\n"
+                    f"📛 **Name:** `{name}`\n"
+                    f"📊 **Current Likes:** {current_likes}\n"
+                    f"❌ **Reason:** {msg_text}\n\n"
+                    f"🕒 `{current_time}`"
+                )
         else:
-            name = data.get("player_name", data.get("name", "N/A"))
-            current_likes = data.get("current_likes", data.get("likes", "N/A"))
-            remaining = data.get("daily_remaining", "0")
-            usage = data.get("daily_usage", "N/A")
+            msg = f"❌ **API Error!** Status Code: {response.status_code}"
 
-            msg = (
-                "⚠️ **No New Likes Added!**\n\n"
-                f"👤 **UID:** `{uid}`\n"
-                f"📛 **Name:** `{name}`\n"
-                f"📊 **Current Likes:** {current_likes}\n"
-                f"⚡ **Daily Remaining:** {remaining}\n"
-                f"📊 **Daily Usage:** {usage}\n\n"
-                "No new likes were added. User may have reached maximum likes for today.\n\n"
-                f"🕒 `{current_time}`"
-            )
+    except Exception as e:
+        msg = f"❌ **Connection Error:** {str(e)}"
 
-        await update.message.reply_text(msg, parse_mode='Markdown')
-
-    except Exception:
-        await update.message.reply_text(f"🚀 UID: `{uid}` এ লাইকের রিকোয়েস্ট পাঠানো হয়েছে।", parse_mode='Markdown')
+    await update.message.reply_text(msg, parse_mode='Markdown')
 
 # --- অ্যাডমিন কমান্ডসমূহ ---
 async def admin_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -343,6 +370,7 @@ async def main():
     application.add_handler(CommandHandler("balance", balance_command))
     application.add_handler(CommandHandler("verify", verify_command))
     application.add_handler(CommandHandler("add", add_command))
+    application.add_handler(CommandHandler("delete", delete_command))
     application.add_handler(CommandHandler("usage", usage_command))
     application.add_handler(CommandHandler("list", list_command))
     application.add_handler(CommandHandler("time", time_command))
@@ -368,4 +396,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    
+        
