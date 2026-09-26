@@ -11,16 +11,12 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 # --- ADMIN CONFIGURATION ---
 ADMIN_IDS = [6347427263, 6992868111]
 
-# --- Flask Server Setup for Render Uptime ---
+# --- Flask Server Setup for Render Health Checks ---
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Bot is Running Live 24/7!"
-
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    return "Bot is Running Live 24/7!", 200
 
 # --- Database Setup ---
 def init_db():
@@ -127,7 +123,7 @@ async def auto_like_scheduler(bot_application):
         
         await asyncio.sleep(60)
 
-# --- Set Telegram Menu Commands Automatically ---
+# --- Set Telegram Menu Commands ---
 async def set_bot_commands(application):
     commands = [
         BotCommand("start", "বট চালু করতে"),
@@ -505,11 +501,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await query.message.reply_text(support_text)
 
-# --- Main Runner ---
-def main():
-    init_db()
+# --- Start Telegram Bot inside Background Thread ---
+def start_bot_thread():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     
-    # Start Flask Web Server in a separate Thread
-    threading.Thread(target=run_flask, daemon=True).start()
+    init_db()
+    TOKEN = "8915748936:AAEJw_iwXbnuMQzrEIAJF163iRPe-30rlpY"
+    
+    application = Application.builder().token(TOKEN).build()
 
-    TOKEN = "8915748936:AAEJw_iw
+    app
