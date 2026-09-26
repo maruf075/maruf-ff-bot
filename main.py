@@ -4,6 +4,14 @@ from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
+# --- আপনার নিজস্ব তথ্যসমূহ ---
+ADMIN_IDS = [6347427263, 6992868111]  # <--- দুইটি আইডিই অ্যাডমিন হিসেবে সেট করা হলো
+TELEGRAM_SUPPORT_USERNAME = "@maruf3900"  
+WHATSAPP_NUMBER = "+8801618203922"              
+
+# ডেটাবেজের বদলে মেমোরি ব্যালেন্স স্টোরেজ
+user_balances = {}
+
 # --- Flask Server (Render Keep-Alive) ---
 app = Flask(__name__)
 
@@ -15,22 +23,22 @@ def home():
 async def set_bot_commands(application):
     commands = [
         BotCommand("start", "বট চালু করুন"),
-        BotCommand("help", "সাহায্য ও নির্দেশনা"),
+        BotCommand("help", "সাহায্য ও সাপোর্ট পেতে"),
         BotCommand("like", "লাইক অর্ডার করুন"),
         BotCommand("balance", "ব্যালেন্স চেক করুন"),
-        BotCommand("rate", "রেট লিস্ট দেখুন"),
-        BotCommand("number", "পেমেন্ট নম্বর দেখুন"),
+        BotCommand("rate", "লাইকের রেট লিস্ট"),
+        BotCommand("number", "পেমেন্ট নম্বর"),
         BotCommand("usage", "ব্যবহারের নিয়ম"),
-        BotCommand("verify", "ট্রানজেকশন ভেরিফাই করুন"),
+        BotCommand("admin", "অ্যাডমিন প্যানেল হেল্প"),
     ]
     await application.bot.set_my_commands(commands)
 
-async def auto_like_scheduler(application):
-    while True:
-        await asyncio.sleep(60)
-
-# --- All Command Handlers ---
+# --- ইউজার হ্যান্ডলারসমূহ ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in user_balances:
+        user_balances[user_id] = 0.0
+
     keyboard = [
         [InlineKeyboardButton("🔥 Free Fire Like", callback_data='ff_like'),
          InlineKeyboardButton("💎 Free Fire Diamond", callback_data='ff_diamond')],
@@ -42,55 +50,113 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("স্বাগতম মারুফ টপ-আপ বটে! নিচের মেনু থেকে অপশন সিলেক্ট করুন:", reply_markup=reply_markup)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("সাহায্যের জন্য অ্যাডমিনের সাথে যোগাযোগ করুন অথবা /start টাইপ করুন।")
-
-async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("লাইক সার্ভিস ব্যবহার করতে মেনু থেকে অপশন নির্বাচন করুন অথবা UID টাইপ করুন।")
-
-async def add_package_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("প্যাকেজ যোগ করার আদেশ গৃহীত হয়েছে।")
-
-async def time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("সার্ভার সময় স্বাভাবিক রয়েছে।")
-
-async def number_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("টাকা রিচার্জ করতে দেওয়া নম্বরে সেন্ড মানি করুন (bKash/Nagad): 017XXXXXXXX")
+    help_text = (
+        "🛠 **সাহায্য ও সাপোর্ট কেন্দ্র**\n\n"
+        "যেকোনো সমস্যায় আমাদের সাথে যোগাযোগ করুন:\n"
+        f"📱 **Telegram:** {TELEGRAM_SUPPORT_USERNAME}\n"
+        f"💬 **WhatsApp:** {WHATSAPP_NUMBER}\n\n"
+        "বটের ব্যবহারবিধি জানতে /usage লিখুন।"
+    )
+    await update.message.reply_text(help_text, parse_mode='Markdown')
 
 async def rate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("বর্তমান রেট লিস্ট:\n- ১০০ লাইক = ১০ টাকা\n- ৫০০ লাইক = ৪৫ টাকা")
+    rate_text = (
+        "📊 **আমাদের বর্তমান লাইক রেট লিস্ট:**\n\n"
+        "• ১০০ লাইক = ৭.৫ টাকা\n"
+        "• ২০০ লাইক = ১৫ টাকা\n"
+        "• ৫০০ লাইক = ৩৭.৫ টাকা\n"
+        "• ১০০০ লাইক = ৭৫ টাকা"
+    )
+    await update.message.reply_text(rate_text, parse_mode='Markdown')
 
 async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("আপনার বর্তমান ব্যালেন্স: 0.0 BDT")
+    user_id = update.effective_user.id
+    bal = user_balances.get(user_id, 0.0)
+    await update.message.reply_text(f"💳 আপনার বর্তমান ব্যালেন্স: {bal} BDT")
 
-async def verify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("ভেরিফিকেশন সম্পন্ন করার জন্য ট্রানজেকশন আইডি প্রদান করুন।")
+async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("লাইক পেতে আপনার ফ্রি ফায়ার UID দিন। উদাহরণ: /like 123456789")
+
+async def number_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"টাকা পাঠাতে বিকাশ/নগদ (Personal) নম্বরে সেন্ড মানি করুন: {WHATSAPP_NUMBER}")
 
 async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("ব্যবহারের নিয়মাবলী:\n১. /start চাপুন\n২. ব্যালেন্স যোগ করুন\n৩. সার্ভিস সিলেক্ট করুন")
+    await update.message.reply_text("১. /start দিয়ে মেনু আনুন\n২. ব্যালেন্স যোগ করতে /number দেখুন\n৩. অর্ডার দিতে UID টাইপ করুন")
 
-# Admin Commands
+# --- অ্যাডমিন প্যানেল কমান্ডসমূহ ---
+async def admin_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.message.reply_text("❌ আপনি এই কমান্ড ব্যবহারের অধিকার রাখেন না।")
+        return
+    
+    admin_msg = (
+        "👑 **অ্যাডমিন কন্ট্রোল প্যানেল**\n\n"
+        "১. ব্যালেন্স যোগ করতে: `/addbalance <User_ID> <Amount>`\n"
+        "   উদাহরণ: `/addbalance 123456789 50`\n\n"
+        "২. ব্যালেন্স কাটতে: `/cutbalance <User_ID> <Amount>`\n"
+        "   উদাহরণ: `/cutbalance 123456789 20`\n\n"
+        "৩. ইউজার ব্যালেন্স দেখতে: `/checkuser <User_ID>`\n"
+        "   উদাহরণ: `/checkuser 123456789`"
+    )
+    await update.message.reply_text(admin_msg, parse_mode='Markdown')
+
 async def admin_add_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("অ্যাডমিন: ব্যালেন্স যোগ করা হয়েছে।")
+    if update.effective_user.id not in ADMIN_IDS:
+        return
+    try:
+        target_id = int(context.args[0])
+        amount = float(context.args[1])
+        user_balances[target_id] = user_balances.get(target_id, 0.0) + amount
+        await update.message.reply_text(f"✅ ইউজার `{target_id}` এর অ্যাকাউন্টে {amount} BDT যোগ করা হয়েছে!\nবর্তমান ব্যালেন্স: {user_balances[target_id]} BDT", parse_mode='Markdown')
+        
+        try:
+            await context.bot.send_message(chat_id=target_id, text=f"🎉 আপনার অ্যাকাউন্টে {amount} BDT যোগ করা হয়েছে!\nবর্তমান ব্যালেন্স: {user_balances[target_id]} BDT")
+        except:
+            pass
+    except Exception as e:
+        await update.message.reply_text("❌ ভুল ফরম্যাট! সঠিক ফরম্যাট: `/addbalance <User_ID> <Amount>`", parse_mode='Markdown')
 
 async def admin_cut_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("অ্যাডমিন: ব্যালেন্স কাটা হয়েছে।")
+    if update.effective_user.id not in ADMIN_IDS:
+        return
+    try:
+        target_id = int(context.args[0])
+        amount = float(context.args[1])
+        user_balances[target_id] = max(0.0, user_balances.get(target_id, 0.0) - amount)
+        await update.message.reply_text(f"✂️ ইউজার `{target_id}` এর অ্যাকাউন্ট থেকে {amount} BDT কেটে নেওয়া হয়েছে।\nবর্তমান ব্যালেন্স: {user_balances[target_id]} BDT", parse_mode='Markdown')
+    except Exception as e:
+        await update.message.reply_text("❌ ভুল ফরম্যাট! সঠিক ফরম্যাট: `/cutbalance <User_ID> <Amount>`", parse_mode='Markdown')
 
 async def admin_check_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("অ্যাডমিন: ইউজার তথ্য প্রদর্শিত হচ্ছে।")
-
-async def admin_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("অ্যাডমিন: ব্রডকাস্ট মেসেজ পাঠানো হয়েছে।")
+    if update.effective_user.id not in ADMIN_IDS:
+        return
+    try:
+        target_id = int(context.args[0])
+        bal = user_balances.get(target_id, 0.0)
+        await update.message.reply_text(f"👤 **ইউজার ইনফো:**\nID: `{target_id}`\nব্যালেন্স: {bal} BDT", parse_mode='Markdown')
+    except Exception as e:
+        await update.message.reply_text("❌ ভুল ফরম্যাট! সঠিক ফরম্যাট: `/checkuser <User_ID>`", parse_mode='Markdown')
 
 # Callback Button Handlers
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    user_id = query.from_user.id
     await query.answer()
+    
     if query.data == 'my_balance':
-        await query.edit_message_text("আপনার বর্তমান ব্যালেন্স: 0.0 BDT")
+        bal = user_balances.get(user_id, 0.0)
+        await query.edit_message_text(f"💳 আপনার বর্তমান ব্যালেন্স: {bal} BDT")
     elif query.data == 'add_balance':
-        await query.edit_message_text("ব্যালেন্স যোগ করতে /number কমান্ড ব্যবহার করে পেমেন্ট করুন।")
+        await query.edit_message_text("ব্যালেন্স যোগ করতে /number লিখে পেমেন্ট বিবরণ জেনে টাকা সেন্ড মানি করুন। তারপর অ্যাডমিনকে ট্রানজেকশন আইডি দিন।")
     elif query.data == 'support':
-        await query.edit_message_text("সাপোর্টের জন্য অ্যাডমিন আইডিতে মেসেজ দিন: @YourAdminUsername")
+        support_msg = (
+            "📞 **আমাদের কাস্টমার সাপোর্ট:**\n\n"
+            f"• Telegram: {TELEGRAM_SUPPORT_USERNAME}\n"
+            f"• WhatsApp: {WHATSAPP_NUMBER}"
+        )
+        await query.edit_message_text(support_msg, parse_mode='Markdown')
+    elif query.data == 'ff_like':
+        await query.edit_message_text("লাইকের সার্ভিস সিলেক্ট করেছেন। আপনার UID লিখে পাঠান।")
     else:
         await query.edit_message_text(f"আপনি নির্বাচন করেছেন: {query.data}")
 
@@ -103,20 +169,17 @@ async def main():
     # User Command Handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("like", like_command))
-    application.add_handler(CommandHandler("add", add_package_command))
-    application.add_handler(CommandHandler("time", time_command))
-    application.add_handler(CommandHandler("number", number_command))
     application.add_handler(CommandHandler("rate", rate_command))
     application.add_handler(CommandHandler("balance", balance_command))
-    application.add_handler(CommandHandler("verify", verify_command))
+    application.add_handler(CommandHandler("like", like_command))
+    application.add_handler(CommandHandler("number", number_command))
     application.add_handler(CommandHandler("usage", usage_command))
-    
-    # Admin Command Handlers
+
+    # Admin Commands Registration
+    application.add_handler(CommandHandler("admin", admin_help))
     application.add_handler(CommandHandler("addbalance", admin_add_balance))
     application.add_handler(CommandHandler("cutbalance", admin_cut_balance))
     application.add_handler(CommandHandler("checkuser", admin_check_user))
-    application.add_handler(CommandHandler("broadcast", admin_broadcast))
 
     # Inline Buttons Handler
     application.add_handler(CallbackQueryHandler(button_handler))
@@ -130,7 +193,6 @@ async def main():
     await application.initialize()
     await application.start()
     await set_bot_commands(application)
-    asyncio.create_task(auto_like_scheduler(application))
     
     print("Telegram Bot Started Successfully!")
     
@@ -139,4 +201,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-                         
+        
