@@ -18,10 +18,6 @@ app = Flask(__name__)
 def home():
     return "Bot is Running Live 24/7!"
 
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
-
 # --- Database Setup ---
 def init_db():
     conn = sqlite3.connect('bot_database.db')
@@ -508,6 +504,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(support_text)
 
 # --- Main Bot Execution ---
-def run_bot():
+def start_bot():
     init_db()
-    TOKEN = "891574
+    TOKEN = "8915748936:AAEJw_iwXbnuMQzrEIAJF163iRPe-30rlpY"
+    application = Application.builder().token(TOKEN).build(
