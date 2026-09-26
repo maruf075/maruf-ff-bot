@@ -1,7 +1,8 @@
-import asyncio
 import os
 import sqlite3
 import requests
+import threading
+import asyncio
 from datetime import datetime, timedelta
 from flask import Flask
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, BotCommand
@@ -16,6 +17,10 @@ app = Flask(__name__)
 @app.route('/')
 def home():
     return "Bot is Running Live 24/7!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
 
 # --- Database Setup ---
 def init_db():
@@ -212,7 +217,7 @@ async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         else:
             await update.message.reply_text(f"❌ অর্ডার ব্যর্থ হয়েছে। কারণ: {response.get('error', 'অজানা সমস্যা')}")
-    except Exception as e:
+    except Exception:
         await update.message.reply_text("❌ সার্ভার প্রোভাইডারের সাথে সংযোগ করা যাচ্ছে না।")
 
 async def add_package_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -500,13 +505,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await query.message.reply_text(support_text)
 
-# --- Main Async Runner for Render ---
-async def main():
+# --- Main Runner ---
+def main():
     init_db()
-    TOKEN = "8915748936:AAEJw_iwXbnuMQzrEIAJF163iRPe-30rlpY"
     
-    application = Application.builder().token(TOKEN).build()
+    # Start Flask Web Server in a separate Thread
+    threading.Thread(target=run_flask, daemon=True).start()
 
-    # Handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHa
+    TOKEN = "8915748936:AAEJw_iw
