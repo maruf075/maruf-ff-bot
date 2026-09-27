@@ -77,7 +77,7 @@ async def auto_like_checker(telegram_app):
 
 async def set_bot_commands(application):
     commands = [
-        BotCommand("start", "বট চালু করুন"),
+        BotCommand("start", "বট चालू করুন"),
         BotCommand("help", "সকল কমান্ডের তালিকা"),
         BotCommand("key", "API Key সেট করুন"),
         BotCommand("support", "সাপোর্ট তথ্য"),
@@ -388,4 +388,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+        
