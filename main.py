@@ -1,9 +1,7 @@
 import os
 import asyncio
-import threading
 import requests
 from datetime import datetime, timedelta
-from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
@@ -26,12 +24,6 @@ item_prices = {
 vouchers_stock = {
     "25": [], "50": [], "115": [], "240": [], "610": [], "weekly": [], "monthly": []
 }
-
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "Bot is Live 24/7!"
 
 def send_like_request(api_key, uid):
     endpoints = [
@@ -450,8 +442,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == 'check_stock':
         await stock_command(query, context)
 
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port, use_reloader=False)
+async def post_init(application):
+    await set_bot_commands(application)
+    asyncio.create_task(auto_like_checker(application))
 
-d
+def main():
+    telegram_app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
+
+    telegram_app.
