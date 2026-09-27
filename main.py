@@ -19,25 +19,12 @@ active_subscriptions = {}
 user_api_keys = {}
 
 item_prices = {
-    "d25": 20,
-    "d50": 35,
-    "d115": 80,
-    "d240": 160,
-    "d610": 400,
-    "weekly": 160,
-    "monthly": 800,
-    "like_7days": 50,
-    "like_30days": 180
+    "d25": 20, "d50": 35, "d115": 80, "d240": 160, "d610": 400,
+    "weekly": 160, "monthly": 800, "like_7days": 50, "like_30days": 180
 }
 
 vouchers_stock = {
-    "25": [],
-    "50": [],
-    "115": [],
-    "240": [],
-    "610": [],
-    "weekly": [],
-    "monthly": []
+    "25": [], "50": [], "115": [], "240": [], "610": [], "weekly": [], "monthly": []
 }
 
 app = Flask(__name__)
@@ -463,5 +450,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == 'check_stock':
         await stock_command(query, context)
 
-def start_telegram_bot():
-    loop = asyncio.new_event_loop(
+def run_bot_loop():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    telegram_app = App
