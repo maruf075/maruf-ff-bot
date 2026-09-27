@@ -1,8 +1,9 @@
 import os
 import asyncio
+import threading
 import requests
 from datetime import datetime, timedelta
-from quart import Quart
+from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
@@ -18,32 +19,19 @@ active_subscriptions = {}
 user_api_keys = {}
 
 item_prices = {
-    "d25": 20,
-    "d50": 35,
-    "d115": 80,
-    "d240": 160,
-    "d610": 400,
-    "weekly": 160,
-    "monthly": 800,
-    "like_7days": 50,
-    "like_30days": 180
+    "d25": 20, "d50": 35, "d115": 80, "d240": 160, "d610": 400,
+    "weekly": 160, "monthly": 800, "like_7days": 50, "like_30days": 180
 }
 
 vouchers_stock = {
-    "25": [],
-    "50": [],
-    "115": [],
-    "240": [],
-    "610": [],
-    "weekly": [],
-    "monthly": []
+    "25": [], "50": [], "115": [], "240": [], "610": [], "weekly": [], "monthly": []
 }
 
-app = Quart(__name__)
+app = Flask(__name__)
 
 @app.route('/')
-async def home():
-    return "Bot is Live and Running 24/7!"
+def home():
+    return "Bot is Live 24/7!"
 
 def send_like_request(api_key, uid):
     endpoints = [
@@ -462,6 +450,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == 'check_stock':
         await stock_command(query, context)
 
-@app.before_serving
-async def startup():
-    telegram_app = Application
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+
+# Run Flask in backgr
