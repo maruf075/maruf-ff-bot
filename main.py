@@ -1,10 +1,24 @@
 import os
 import asyncio
 import requests
+from threading import Thread
+from flask import Flask
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
+# --- 1. Render Port Scan Fix (Web Server) ---
+web_app = Flask(__name__)
+
+@web_app.route('/')
+def home():
+    return "Bot is running perfectly 24/7!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))
+    web_app.run(host='0.0.0.0', port=port)
+
+# --- 2. Configurations & Variables ---
 BOT_TOKEN = "8915748936:AAGPXAt0h-7tWOPpumGWrzoYejXf3xRPHJQ"
 LIKE_API_KEY = "VALT2H"
 
@@ -25,6 +39,7 @@ vouchers_stock = {
     "25": [], "50": [], "115": [], "240": [], "610": [], "weekly": [], "monthly": []
 }
 
+# --- 3. API & Auto Checker Loop ---
 def send_like_request(api_key, uid):
     endpoints = [
         f"https://key.like.mlbbshop.com/like?key={api_key}&uid={uid}",
@@ -75,9 +90,10 @@ async def auto_like_checker(telegram_app):
             pass
         await asyncio.sleep(30)
 
+# --- 4. Bot Command List Setup ---
 async def set_bot_commands(application):
     commands = [
-        BotCommand("start", "বট चालू করুন"),
+        BotCommand("start", "বট চালু করুন"),
         BotCommand("help", "সকল কমান্ডের তালিকা"),
         BotCommand("key", "API Key সেট করুন"),
         BotCommand("support", "সাপোর্ট তথ্য"),
@@ -96,10 +112,13 @@ async def set_bot_commands(application):
         BotCommand("topup", "ডায়মন্ড ও মেম্বারশিপ টপ-আপ করুন"),
         BotCommand("addvoucher", "[Admin] ভাউচার এড করুন"),
         BotCommand("setrate", "[Admin] দাম পরিবর্তন করুন"),
+        BotCommand("addbalance", "[Admin] ব্যালেন্স যোগ করুন"),
+        BotCommand("cutbalance", "[Admin] ব্যালেন্স কাটুন"),
         BotCommand("admin", "অ্যাডমিন প্যানেল"),
     ]
     await application.bot.set_my_commands(commands)
 
+# --- 5. User Command Functions ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in user_balances:
@@ -134,6 +153,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /time `[HH:MM]` - অটো-লাইকের সময় সেট করুন\n"
         "• /like `[UID]` - ইনস্ট্যান্ট লাইক পাঠান\n\n"
         "⚙️ **অ্যাডমিন কমান্ডসমূহ:**\n"
+        "• /addbalance `[User_ID] [Amount]` - ব্যালেন্স যোগ করুন\n"
+        "• /cutbalance `[User_ID] [Amount]` - ব্যালেন্স কাটুন\n"
         "• /addvoucher `[Pkg] [Code]` - স্টক যোগ করুন\n"
         "• /setrate `[Type] [Pkg] [Price]` - দাম পরিবর্তন করুন\n"
         "• /admin - অ্যাডমিন কন্ট্রোল প্যানেল\n"
@@ -274,6 +295,43 @@ async def topup_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text("❌ সঠিক নিয়ম: `/tp [Player_UID] [Package]`", parse_mode='Markdown')
 
+# --- 6. Admin Commands ---
+async def addbalance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+    try:
+        target_id = int(context.args[0])
+        amount = float(context.args[1])
+        current_bal = user_balances.get(target_id, 0.0)
+        new_bal = current_bal + amount
+        user_balances[target_id] = new_bal
+        await update.message.reply_text(f"✅ ইউজার `{target_id}`-এর ওয়ালেটে **৳{amount}** যোগ করা হয়েছে।\nবর্তমান ব্যালেন্স: **৳{new_bal}**", parse_mode='Markdown')
+        try:
+            await context.bot.send_message(chat_id=target_id, text=f"🎉 আপনার ওয়ালেটে **৳{amount}** অ্যাডমিন কর্তৃক যুক্ত করা হয়েছে!\nবর্তমান ব্যালেন্স: **৳{new_bal}**", parse_mode='Markdown')
+        except Exception:
+            pass
+    except Exception:
+        await update.message.reply_text("❌ সঠিক নিয়ম: `/addbalance [User_ID] [Amount]`", parse_mode='Markdown')
+
+async def cutbalance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+    try:
+        target_id = int(context.args[0])
+        amount = float(context.args[1])
+        current_bal = user_balances.get(target_id, 0.0)
+        new_bal = max(0.0, current_bal - amount)
+        user_balances[target_id] = new_bal
+        await update.message.reply_text(f"✂️ ইউজার `{target_id}`-এর ওয়ালেট থেকে **৳{amount}** কাটা হয়েছে।\nবর্তমান ব্যালেন্স: **৳{new_bal}**", parse_mode='Markdown')
+        try:
+            await context.bot.send_message(chat_id=target_id, text=f"⚠️ আপনার ওয়ালেট থেকে **৳{amount}** কাটা হয়েছে।\nবর্তমান ব্যালেন্স: **৳{new_bal}**", parse_mode='Markdown')
+        except Exception:
+            pass
+    except Exception:
+        await update.message.reply_text("❌ সঠিক নিয়ম: `/cutbalance [User_ID] [Amount]`", parse_mode='Markdown')
+
 async def addvoucher_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in ADMIN_IDS:
@@ -302,6 +360,7 @@ async def setrate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
+# --- 7. Utility & Callback Functions ---
 async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_name = update.effective_user.first_name or "User"
@@ -359,7 +418,13 @@ async def post_init(application):
     await set_bot_commands(application)
     asyncio.create_task(auto_like_checker(application))
 
+# --- 8. Main Function ---
 def main():
+    # Flask ওয়েব সার্ভার চালু করা (Render Web Service Timeout এড়ানোর জন্য)
+    server_thread = Thread(target=run_flask)
+    server_thread.daemon = True
+    server_thread.start()
+
     telegram_app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
     telegram_app.add_handler(CommandHandler("start", start))
@@ -367,25 +432,4 @@ def main():
     telegram_app.add_handler(CommandHandler("key", key_command))
     telegram_app.add_handler(CommandHandler("support", support_command))
     telegram_app.add_handler(CommandHandler("number", number_command))
-    telegram_app.add_handler(CommandHandler("rate", rate_command))
-    telegram_app.add_handler(CommandHandler("balance", balance_command))
-    telegram_app.add_handler(CommandHandler("verify", verify_command))
-    telegram_app.add_handler(CommandHandler("add", add_command))
-    telegram_app.add_handler(CommandHandler("delete", delete_command))
-    telegram_app.add_handler(CommandHandler("usage", usage_command))
-    telegram_app.add_handler(CommandHandler("time", time_command))
-    telegram_app.add_handler(CommandHandler("like", like_command))
-    telegram_app.add_handler(CommandHandler("stock", stock_command))
-    telegram_app.add_handler(CommandHandler("topup", topup_command))
-    telegram_app.add_handler(CommandHandler("tp", topup_command))
-    telegram_app.add_handler(CommandHandler("addvoucher", addvoucher_command))
-    telegram_app.add_handler(CommandHandler("setrate", setrate_command))
-    telegram_app.add_handler(CommandHandler("list", list_command))
-    telegram_app.add_handler(CommandHandler("admin", admin_command))
-    telegram_app.add_handler(CallbackQueryHandler(button_handler))
-
-    telegram_app.run_polling(drop_pending_updates=True)
-
-if __name__ == "__main__":
-    main()
-        
+    telegram_app.add_handler(CommandHandler("rate", rate_
