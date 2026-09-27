@@ -1,3 +1,2 @@
-python-telegram-bot
+pypython-telegram-bot
 requests
-Flask
