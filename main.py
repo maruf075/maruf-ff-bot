@@ -1,5 +1,6 @@
 import os
 import asyncio
+import threading
 import requests
 from datetime import datetime, timedelta
 from flask import Flask
@@ -17,7 +18,6 @@ user_balances = {}
 active_subscriptions = {}
 user_api_keys = {}
 
-# Dynamic Price Rates Default (BDT)
 item_prices = {
     "d25": 20,
     "d50": 35,
@@ -30,7 +30,6 @@ item_prices = {
     "like_30days": 180
 }
 
-# UniPin Voucher Stocks
 vouchers_stock = {
     "25": [],
     "50": [],
@@ -42,89 +41,59 @@ vouchers_stock = {
 }
 
 app = Flask(__name__)
-telegram_app = None
 
 @app.route('/')
 def home():
     return "Bot is Live and Running 24/7!"
 
 def send_like_request(api_key, uid):
-    """API থেকে লাইক পাঠানোর জন্য মাল্টিপল এ্যান্ডপয়েন্ট ট্রাই করার ফাংশন"""
     endpoints = [
         f"https://key.like.mlbbshop.com/like?key={api_key}&uid={uid}",
         f"https://freefirelike.com/api/like?key={api_key}&uid={uid}",
         f"https://buykey.freefirelike.com/like?key={api_key}&uid={uid}"
     ]
-    
     headers = {'User-Agent': 'Mozilla/5.0'}
-    
     for url in endpoints:
         try:
-            res = requests.get(url, headers=headers, timeout=15)
+            res = requests.get(url, headers=headers, timeout=10)
             if res.status_code == 200:
                 return res.json(), 200
         except Exception:
             continue
-            
     return None, 404
 
-async def auto_like_checker():
-    """অটোমেটিক লাইক চেকার টাস্ক"""
+async def auto_like_checker(telegram_app):
     while True:
         try:
-            if telegram_app:
-                bd_now = datetime.utcnow() + timedelta(hours=6)
-                current_time_str = bd_now.strftime("%H:%M")
+            bd_now = datetime.utcnow() + timedelta(hours=6)
+            current_time_str = bd_now.strftime("%H:%M")
 
-                for user_id, subs in list(active_subscriptions.items()):
-                    api_key_to_use = user_api_keys.get(user_id, LIKE_API_KEY)
+            for user_id, subs in list(active_subscriptions.items()):
+                api_key_to_use = user_api_keys.get(user_id, LIKE_API_KEY)
 
-                    for sub in list(subs):
-                        if bd_now > sub["end_date"]:
-                            subs.remove(sub)
-                            continue
+                for sub in list(subs):
+                    if bd_now > sub["end_date"]:
+                        subs.remove(sub)
+                        continue
 
-                        if sub["auto_time"] == current_time_str:
-                            uid = sub["uid"]
-                            data, status = send_like_request(api_key_to_use, uid)
-                            time_now_str = bd_now.strftime("%I:%M %p, %d %b %Y")
+                    if sub["auto_time"] == current_time_str:
+                        uid = sub["uid"]
+                        data, status = send_like_request(api_key_to_use, uid)
+                        time_now_str = bd_now.strftime("%I:%M %p, %d %b %Y")
 
-                            if status == 200 and data:
-                                name = data.get("Name") or data.get("player_name") or data.get("name") or "N/A"
-                                likes_given = data.get("Likes Sent") or data.get("likes_given") or 100
-                                before = data.get("Before") or data.get("likes_before") or "N/A"
-                                after = data.get("After") or data.get("likes_after") or "N/A"
-                                
-                                if likes_given or str(data.get("status", "")).lower() == "success":
-                                    sub["used_likes"] += int(likes_given)
-                                    msg = (
-                                        "⏰ **[AUTO LIKE SENT]**\n\n"
-                                        "🔥 **MARUF LIKE BOT**\n"
-                                        f"👤 **UID:** `{uid}`\n"
-                                        f"📛 **Name:** `{name}`\n"
-                                        f"❤️ **Likes Sent:** +{likes_given}\n"
-                                        f"📊 **Before:** {before}\n"
-                                        f"📈 **After:** {after}\n\n"
-                                        f"🕒 `{time_now_str}`"
-                                    )
-                                else:
-                                    reason = data.get("Reason") or data.get("message") or "Limit reached for today"
-                                    msg = (
-                                        "⏰ **[AUTO LIKE FAILED]**\n\n"
-                                        f"🎯 **UID:** `{uid}`\n"
-                                        f"❌ **Reason:** {reason}\n\n"
-                                        f"🕒 `{time_now_str}`"
-                                    )
-                            else:
-                                msg = f"❌ **Auto Like Error!** API Server Response Fail."
+                        if status == 200 and data:
+                            name = data.get("Name") or data.get("player_name") or "N/A"
+                            likes_given = data.get("Likes Sent") or 100
+                            msg = f"⏰ **[AUTO LIKE SENT]**\n\n👤 **UID:** `{uid}`\n📛 **Name:** `{name}`\n❤️ **Likes:** +{likes_given}\n🕒 `{time_now_str}`"
+                        else:
+                            msg = f"⏰ **[AUTO LIKE FAILED]**\n🎯 **UID:** `{uid}`"
 
-                            try:
-                                await telegram_app.bot.send_message(chat_id=user_id, text=msg, parse_mode='Markdown')
-                            except Exception:
-                                pass
+                        try:
+                            await telegram_app.bot.send_message(chat_id=user_id, text=msg, parse_mode='Markdown')
+                        except Exception:
+                            pass
         except Exception:
             pass
-        
         await asyncio.sleep(30)
 
 async def set_bot_commands(application):
@@ -161,12 +130,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔥 Free Fire Like", callback_data='ff_like'),
          InlineKeyboardButton("💎 Free Fire Diamond", callback_data='ff_diamond')],
         [InlineKeyboardButton("💳 My Balance", callback_data='my_balance'),
-         InlineKeyboardButton("💵 Add Balance", callback_data='add_balance')],
-        [InlineKeyboardButton("📦 Stock Check", callback_data='check_stock'),
-         InlineKeyboardButton("📞 Support", callback_data='support')]
+         InlineKeyboardButton("📦 Stock Check", callback_data='check_stock')],
+        [InlineKeyboardButton("📞 Support", callback_data='support')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("স্বাগতম মারুফ লাইক ও টপ-আপ বটে! সকল কমান্ড একসাথে দেখতে /help টাইপ করুন।", reply_markup=reply_markup)
+    await update.message.reply_text("👋 স্বাগতম মারুফ লাইক ও টপ-আপ বটে! সকল কমান্ড একসাথে দেখতে /help টাইপ করুন।", reply_markup=reply_markup)
 
 async def key_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -183,14 +151,13 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         "📜 **বটের সকল কমান্ডের তালিকা:**\n\n"
         "• /key `[KEY]` - API Key সেট করুন\n"
-        "• /help - সকল কমান্ডের তালিকা देखাবে\n"
+        "• /help - সকল কমান্ডের তালিকা দেখাবে\n"
         "• /support - কাস্টমার সাপোর্ট তথ্য\n"
         "• /number - বিকাশ/নগদ পেমেন্ট নম্বর\n"
         "• /rate - লাইক ও ডায়মন্ডের দামের তালিকা\n"
         "• /balance - ওয়ালেটের বর্তমান ব্যালেন্স\n"
         "• /stock - UniPin ভাউচারের বর্তমান স্টক দেখুন\n"
         "• /tp `[UID] [Package]` - ডায়মন্ড/মেম্বারশিপ টপ-আপ করুন\n"
-        "  *(উদাহরণ: `/tp 12345678 115` অথবা `/tp 12345678 weekly`)*\n"
         "• /verify `[TrxID]` - টাকা জমা দিয়ে ব্যালেন্স যুক্ত করুন\n"
         "• /add `[UID] [Likes] [Days]` - অটো-লাইক প্যাকেজ যোগ করুন\n"
         "• /delete `[Schedule_ID]` - রানিং শেডিউল ডিলিট করুন\n"
@@ -267,7 +234,7 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         })
         await update.message.reply_text(f"✅ সফলভাবে **{days} দিনের** লাইক প্যাকেজ যোগ করা হয়েছে!\n🎯 **UID:** `{uid}`\n🔥 **দৈনিক লাইক:** {likes}\n🆔 **Schedule ID:** `{sub_id}`", parse_mode='Markdown')
     except Exception:
-        await update.message.reply_text("❌ ভুল ফরম্যাট! সঠিক নিয়ম: `/add [UID] [Likes] [Days]`\nউদাহরণ: `/add 12345678 100 30D`", parse_mode='Markdown')
+        await update.message.reply_text("❌ ভুল ফরম্যাট! সঠিক নিয়ম: `/add [UID] [Likes] [Days]`", parse_mode='Markdown')
 
 async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -276,7 +243,6 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sub_id = context.args[0].strip().upper()
     user_id = update.effective_user.id
     subs = active_subscriptions.get(user_id, [])
-    
     active_subscriptions[user_id] = [s for s in subs if s['sub_id'] != sub_id]
     await update.message.reply_text(f"🗑️ Schedule ID `{sub_id}` সফলভাবে ডিলিট করা হয়েছে।", parse_mode='Markdown')
 
@@ -321,7 +287,6 @@ async def topup_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❌ পর্যাপ্ত ব্যালেন্স নেই! এই প্যাকেজের দাম **৳{price}**, আপনার ব্যালেন্স **৳{user_bal}**।", parse_mode='Markdown')
             return
 
-        # Deduct balance & extract voucher code
         user_balances[user_id] -= price
         code = vouchers_stock[pkg].pop(0)
 
@@ -358,7 +323,7 @@ async def addvoucher_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         else:
             await update.message.reply_text("❌ ভুল প্যাকেজ নাম! সঠিক প্যাকেজ: `25`, `50`, `115`, `240`, `610`, `weekly`, `monthly`", parse_mode='Markdown')
     except Exception:
-        await update.message.reply_text("❌ সঠিক ফরম্যাট: `/addvoucher [Package] [Code]`\nউদাহরণ: `/addvoucher 115 UPBD-X1Y2Z3-4567`", parse_mode='Markdown')
+        await update.message.reply_text("❌ সঠিক ফরম্যাট: `/addvoucher [Package] [Code]`", parse_mode='Markdown')
 
 async def setrate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -375,14 +340,14 @@ async def setrate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             key = f"d{target}" if target in ["25", "50", "115", "240", "610"] else target
             if key in item_prices:
                 item_prices[key] = new_price
-                await update.message.reply_text(f"✅ **{target} Diamond/Membership** এর নতুন দাম নির্ধারণ করা হয়েছে: **৳{new_price}**", parse_mode='Markdown')
+                await update.message.reply_text(f"✅ **{target} Diamond/Membership** এর নতুন দাম: **৳{new_price}**", parse_mode='Markdown')
             else:
                 await update.message.reply_text("❌ ভুল ডায়মন্ড প্যাকেজ নাম!")
         elif category == "like":
             key = f"like_{target}"
             if key in item_prices:
                 item_prices[key] = new_price
-                await update.message.reply_text(f"✅ **Like {target}** এর নতুন দাম নির্ধারণ করা হয়েছে: **৳{new_price}**", parse_mode='Markdown')
+                await update.message.reply_text(f"✅ **Like {target}** এর নতুন দাম: **৳{new_price}**", parse_mode='Markdown')
             else:
                 await update.message.reply_text("❌ ভুল অপশন! `7days` বা `30days` টাইপ করুন।")
     except Exception:
@@ -396,9 +361,7 @@ async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bd_now = datetime.utcnow() + timedelta(hours=6)
     current_time_str = bd_now.strftime("%I:%M %p, %d %b %Y")
 
-    test_uid = "100000000"
-    data, status = send_like_request(api_key_to_use, test_uid)
-
+    data, status = send_like_request(api_key_to_use, "100000000")
     daily_rem = "N/A"
     status_text = "🟢 Active" if status == 200 else "🔴 Inactive/Error"
 
@@ -420,11 +383,11 @@ async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in active_subscriptions or not active_subscriptions[user_id]:
-        await update.message.reply_text("❌ আপনার কোনো সক্রিয় লাইক প্যাকেজ নেই। আগে `/add` দিয়ে প্যাকেজ যোগ করুন।", parse_mode='Markdown')
+        await update.message.reply_text("❌ আপনার কোনো সক্রিয় লাইক প্যাকেজ নেই।", parse_mode='Markdown')
         return
 
     if not context.args:
-        await update.message.reply_text("❌ সময় প্রদান করুন! ২৪ ঘণ্টার ফরম্যাটে দিন।\nউদাহরণ: `/time 18:27`", parse_mode='Markdown')
+        await update.message.reply_text("❌ সময় প্রদান করুন! উদাহরণ: `/time 18:27`", parse_mode='Markdown')
         return
 
     time_input = context.args[0].strip()
@@ -448,4 +411,57 @@ async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     api_key_to_use = user_api_keys.get(user_id, LIKE_API_KEY)
     uid = str(context.args[0]).strip()
     
-    bd_
+    bd_now = datetime.utcnow() + timedelta(hours=6)
+    current_time = bd_now.strftime("%I:%M %p, %d %b %Y")
+    
+    data, status = send_like_request(api_key_to_use, uid)
+
+    if status == 200 and data:
+        name = data.get("Name") or data.get("player_name") or "N/A"
+        likes_given = data.get("Likes Sent") or 100
+        before = data.get("Before") or "N/A"
+        after = data.get("After") or "N/A"
+        daily_rem = data.get("Daily Remaining") or "N/A"
+
+        msg = (
+            "🔥 **MARUF LIKE BOT**\n\n"
+            "✅ **Likes Sent Successfully!**\n\n"
+            f"👤 **UID:** `{uid}`\n"
+            f"📛 **Name:** `{name}`\n"
+            f"❤️ **Likes Sent:** +{likes_given}\n"
+            f"📊 **Before:** {before}\n"
+            f"📈 **After:** {after}\n"
+            f"⚡ **Daily Remaining:** {daily_rem}\n\n"
+            f"🕒 `{current_time}`"
+        )
+    else:
+        msg = f"❌ **API Error! Status Code: 404**\n\nলাইক প্রোভাইডার সার্ভারে রিকোয়েস্ট ব্যর্থ হয়েছে।"
+
+    await update.message.reply_text(msg, parse_mode='Markdown')
+
+async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    subs = active_subscriptions.get(user_id, [])
+    if not subs:
+        await update.message.reply_text("📋 কোনো সক্রিয় শেডিউল পাওয়া যায়নি।")
+        return
+    msg = "📋 **Active Schedules:**\n\n"
+    for idx, sub in enumerate(subs, 1):
+        msg += f"**{idx}. UID:** `{sub['uid']}` | **Auto Time:** `{sub['auto_time']}`\n"
+    await update.message.reply_text(msg, parse_mode='Markdown')
+
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        await update.message.reply_text("❌ আপনি অ্যাডমিন নন!")
+        return
+    await update.message.reply_text("⚙️ **Admin Panel Active!**")
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.data == 'check_stock':
+        await stock_command(query, context)
+
+def start_telegram_bot():
+    loop = asyncio.new_event_loop(
