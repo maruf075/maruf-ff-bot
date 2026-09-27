@@ -17,6 +17,30 @@ user_balances = {}
 active_subscriptions = {}
 user_api_keys = {}
 
+# Dynamic Price Rates Default (BDT)
+item_prices = {
+    "d25": 20,
+    "d50": 35,
+    "d115": 80,
+    "d240": 160,
+    "d610": 400,
+    "weekly": 160,
+    "monthly": 800,
+    "like_7days": 50,
+    "like_30days": 180
+}
+
+# UniPin Voucher Stocks
+vouchers_stock = {
+    "25": [],
+    "50": [],
+    "115": [],
+    "240": [],
+    "610": [],
+    "weekly": [],
+    "monthly": []
+}
+
 app = Flask(__name__)
 telegram_app = None
 
@@ -119,6 +143,11 @@ async def set_bot_commands(application):
         BotCommand("list", "অ্যাক্টিভ শেডিউল লিস্ট"),
         BotCommand("time", "অটো টাইম সেট করুন"),
         BotCommand("like", "ইনস্ট্যান্ট লাইক পাঠান"),
+        BotCommand("stock", "UniPin ভাউচার স্টক দেখুন"),
+        BotCommand("tp", "ডায়মন্ড ও মেম্বারশিপ টপ-আপ করুন"),
+        BotCommand("topup", "ডায়মন্ড ও মেম্বারশিপ টপ-আপ করুন"),
+        BotCommand("addvoucher", "[Admin] ভাউচার এড করুন"),
+        BotCommand("setrate", "[Admin] দাম পরিবর্তন করুন"),
         BotCommand("admin", "অ্যাডমিন প্যানেল"),
     ]
     await application.bot.set_my_commands(commands)
@@ -133,10 +162,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
          InlineKeyboardButton("💎 Free Fire Diamond", callback_data='ff_diamond')],
         [InlineKeyboardButton("💳 My Balance", callback_data='my_balance'),
          InlineKeyboardButton("💵 Add Balance", callback_data='add_balance')],
-        [InlineKeyboardButton("📞 Support", callback_data='support')]
+        [InlineKeyboardButton("📦 Stock Check", callback_data='check_stock'),
+         InlineKeyboardButton("📞 Support", callback_data='support')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("স্বাগতম মারুফ লাইক বটে! সকল কমান্ড একসাথে দেখতে /help টাইপ করুন।", reply_markup=reply_markup)
+    await update.message.reply_text("স্বাগতম মারুফ লাইক ও টপ-আপ বটে! সকল কমান্ড একসাথে দেখতে /help টাইপ করুন।", reply_markup=reply_markup)
 
 async def key_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -153,18 +183,24 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         "📜 **বটের সকল কমান্ডের তালিকা:**\n\n"
         "• /key `[KEY]` - API Key সেট করুন\n"
-        "• /help - সকল কমান্ডের তালিকা দেখাবে\n"
-        "• /support - কাস্টমার সাপোর্ট তথ্য দেখাবে\n"
+        "• /help - সকল কমান্ডের তালিকা देखাবে\n"
+        "• /support - কাস্টমার সাপোর্ট তথ্য\n"
         "• /number - বিকাশ/নগদ পেমেন্ট নম্বর\n"
-        "• /rate - লাইকের অফার ও দামের তালিকা\n"
+        "• /rate - লাইক ও ডায়মন্ডের দামের তালিকা\n"
         "• /balance - ওয়ালেটের বর্তমান ব্যালেন্স\n"
+        "• /stock - UniPin ভাউচারের বর্তমান স্টক দেখুন\n"
+        "• /tp `[UID] [Package]` - ডায়মন্ড/মেম্বারশিপ টপ-আপ করুন\n"
+        "  *(উদাহরণ: `/tp 12345678 115` অথবা `/tp 12345678 weekly`)*\n"
         "• /verify `[TrxID]` - টাকা জমা দিয়ে ব্যালেন্স যুক্ত করুন\n"
         "• /add `[UID] [Likes] [Days]` - অটো-লাইক প্যাকেজ যোগ করুন\n"
         "• /delete `[Schedule_ID]` - রানিং শেডিউল ডিলিট করুন\n"
-        "• /usage - API Key ব্যবহারের বিস্তারিত বিবরণ\n"
+        "• /usage - API Key ব্যবহারের বিবরণ\n"
         "• /list - অ্যাক্টিভ শেডিউলের তালিকা\n"
-        "• /time `[HH:MM]` - প্রতিদিন অটো-লাইক যাওয়ার সময় সেট করুন\n"
-        "• /like `[UID]` - ইনস্ট্যান্ট লাইক পাঠান\n"
+        "• /time `[HH:MM]` - অটো-লাইকের সময় সেট করুন\n"
+        "• /like `[UID]` - ইনস্ট্যান্ট লাইক পাঠান\n\n"
+        "⚙️ **অ্যাডমিন কমান্ডসমূহ:**\n"
+        "• /addvoucher `[Pkg] [Code]` - স্টক যোগ করুন\n"
+        "• /setrate `[Type] [Pkg] [Price]` - দাম পরিবর্তন করুন\n"
         "• /admin - অ্যাডমিন কন্ট্রোল প্যানেল\n"
     )
     await update.message.reply_text(help_text, parse_mode='Markdown')
@@ -178,13 +214,26 @@ async def number_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode='Markdown')
 
 async def rate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = "🔥 **Like Offer Rates:**\n• 100 Likes/Day (7 Days) - 50 BDT\n• 100 Likes/Day (30 Days) - 180 BDT"
-    await update.message.reply_text(msg)
+    msg = (
+        "💰 **Current Price List:**\n\n"
+        "🔥 **Free Fire Likes:**\n"
+        f"• 100 Likes/Day (7 Days): ৳{item_prices['like_7days']}\n"
+        f"• 100 Likes/Day (30 Days): ৳{item_prices['like_30days']}\n\n"
+        "💎 **Diamonds & Memberships (UniPin):**\n"
+        f"• 25 Diamonds: ৳{item_prices['d25']}\n"
+        f"• 50 Diamonds: ৳{item_prices['d50']}\n"
+        f"• 115 Diamonds: ৳{item_prices['d115']}\n"
+        f"• 240 Diamonds: ৳{item_prices['d240']}\n"
+        f"• 610 Diamonds: ৳{item_prices['d610']}\n"
+        f"• Weekly Membership: ৳{item_prices['weekly']}\n"
+        f"• Monthly Membership: ৳{item_prices['monthly']}"
+    )
+    await update.message.reply_text(msg, parse_mode='Markdown')
 
 async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     bal = user_balances.get(user_id, 0.0)
-    await update.message.reply_text(f"💳 আপনার বর্তমান ওয়ালেট ব্যালেন্স: **{bal} BDT**", parse_mode='Markdown')
+    await update.message.reply_text(f"💳 আপনার বর্তমান ওয়ালেট ব্যালেন্স: **৳{bal}**", parse_mode='Markdown')
 
 async def verify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -231,6 +280,114 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     active_subscriptions[user_id] = [s for s in subs if s['sub_id'] != sub_id]
     await update.message.reply_text(f"🗑️ Schedule ID `{sub_id}` সফলভাবে ডিলিট করা হয়েছে।", parse_mode='Markdown')
 
+async def stock_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = (
+        "📦 **UniPin Voucher Stock Status:**\n\n"
+        f"💎 **25 Diamonds:** {len(vouchers_stock['25'])} Pcs\n"
+        f"💎 **50 Diamonds:** {len(vouchers_stock['50'])} Pcs\n"
+        f"💎 **115 Diamonds:** {len(vouchers_stock['115'])} Pcs\n"
+        f"💎 **240 Diamonds:** {len(vouchers_stock['240'])} Pcs\n"
+        f"💎 **610 Diamonds:** {len(vouchers_stock['610'])} Pcs\n"
+        f"👑 **Weekly Membership:** {len(vouchers_stock['weekly'])} Pcs\n"
+        f"👑 **Monthly Membership:** {len(vouchers_stock['monthly'])} Pcs\n\n"
+        "💡 *টপ-আপ করতে `/tp [UID] [Package]` কমান্ড ব্যবহার করুন।*"
+    )
+    await update.message.reply_text(msg, parse_mode='Markdown')
+
+async def topup_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    try:
+        if len(context.args) < 2:
+            await update.message.reply_text("❌ সঠিক নিয়ম: `/tp [Player_UID] [Package]`\nউদাহরণ: `/tp 12345678 115` বা `/tp 12345678 weekly`", parse_mode='Markdown')
+            return
+
+        uid = context.args[0].strip()
+        pkg = context.args[1].lower().strip()
+
+        pkg_key = f"d{pkg}" if pkg in ["25", "50", "115", "240", "610"] else pkg
+
+        if pkg not in vouchers_stock:
+            await update.message.reply_text("❌ ভুল প্যাকেজ নাম! পছন্দ করুন: `25`, `50`, `115`, `240`, `610`, `weekly`, `monthly`", parse_mode='Markdown')
+            return
+
+        if len(vouchers_stock[pkg]) == 0:
+            await update.message.reply_text(f"❌ দুঃখিত! **{pkg.upper()}** প্যাকেজটি বর্তমানে আউট অফ স্টক আছে।", parse_mode='Markdown')
+            return
+
+        price = item_prices.get(pkg_key, 0)
+        user_bal = user_balances.get(user_id, 0.0)
+
+        if user_bal < price:
+            await update.message.reply_text(f"❌ পর্যাপ্ত ব্যালেন্স নেই! এই প্যাকেজের দাম **৳{price}**, আপনার ব্যালেন্স **৳{user_bal}**।", parse_mode='Markdown')
+            return
+
+        # Deduct balance & extract voucher code
+        user_balances[user_id] -= price
+        code = vouchers_stock[pkg].pop(0)
+
+        bd_now = datetime.utcnow() + timedelta(hours=6)
+        time_str = bd_now.strftime("%I:%M %p, %d %b %Y")
+
+        msg = (
+            "💎 **[TOP-UP VOUCHER DELIVERED]**\n\n"
+            f"👤 **Player UID:** `{uid}`\n"
+            f"📦 **Package:** {pkg.upper()}\n"
+            f"💰 **Deducted:** ৳{price}\n\n"
+            f"🎟️ **UniPin Voucher Code:**\n`{code}`\n\n"
+            "🔗 **Redeem Link:** https://shop.garena.my\n"
+            f"🕒 `{time_str}`"
+        )
+        await update.message.reply_text(msg, parse_mode='Markdown')
+
+    except Exception:
+        await update.message.reply_text("❌ সঠিক নিয়ম: `/tp [Player_UID] [Package]`\nউদাহরণ: `/tp 12345678 115`", parse_mode='Markdown')
+
+async def addvoucher_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        await update.message.reply_text("❌ এটি কেবল অ্যাডমিনের জন্য সংরক্ষিত কমান্ড।")
+        return
+
+    try:
+        pkg = context.args[0].lower()
+        code = context.args[1].strip()
+
+        if pkg in vouchers_stock:
+            vouchers_stock[pkg].append(code)
+            await update.message.reply_text(f"✅ **{pkg}** প্যাকেজে নতুন UniPin ভাউচার কোড এড হয়েছে!\n📦 বর্তমান স্টক: **{len(vouchers_stock[pkg])} Pcs**", parse_mode='Markdown')
+        else:
+            await update.message.reply_text("❌ ভুল প্যাকেজ নাম! সঠিক প্যাকেজ: `25`, `50`, `115`, `240`, `610`, `weekly`, `monthly`", parse_mode='Markdown')
+    except Exception:
+        await update.message.reply_text("❌ সঠিক ফরম্যাট: `/addvoucher [Package] [Code]`\nউদাহরণ: `/addvoucher 115 UPBD-X1Y2Z3-4567`", parse_mode='Markdown')
+
+async def setrate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        await update.message.reply_text("❌ এটি কেবল অ্যাডমিনের জন্য সংরক্ষিত কমান্ড।")
+        return
+
+    try:
+        category = context.args[0].lower()
+        target = context.args[1].lower()
+        new_price = float(context.args[2])
+
+        if category == "diamond":
+            key = f"d{target}" if target in ["25", "50", "115", "240", "610"] else target
+            if key in item_prices:
+                item_prices[key] = new_price
+                await update.message.reply_text(f"✅ **{target} Diamond/Membership** এর নতুন দাম নির্ধারণ করা হয়েছে: **৳{new_price}**", parse_mode='Markdown')
+            else:
+                await update.message.reply_text("❌ ভুল ডায়মন্ড প্যাকেজ নাম!")
+        elif category == "like":
+            key = f"like_{target}"
+            if key in item_prices:
+                item_prices[key] = new_price
+                await update.message.reply_text(f"✅ **Like {target}** এর নতুন দাম নির্ধারণ করা হয়েছে: **৳{new_price}**", parse_mode='Markdown')
+            else:
+                await update.message.reply_text("❌ ভুল অপশন! `7days` বা `30days` টাইপ করুন।")
+    except Exception:
+        await update.message.reply_text("❌ সঠিক ফরম্যাট:\n`/setrate diamond 115 80`\n`/setrate like 7days 60`", parse_mode='Markdown')
+
 async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_name = update.effective_user.first_name or "User"
@@ -239,7 +396,6 @@ async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bd_now = datetime.utcnow() + timedelta(hours=6)
     current_time_str = bd_now.strftime("%I:%M %p, %d %b %Y")
 
-    # একটি টেস্ট রিকোয়েস্ট পাঠাবো API এর স্ট্যাটাস ও লিমিট চেক করতে
     test_uid = "100000000"
     data, status = send_like_request(api_key_to_use, test_uid)
 
@@ -292,112 +448,4 @@ async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     api_key_to_use = user_api_keys.get(user_id, LIKE_API_KEY)
     uid = str(context.args[0]).strip()
     
-    bd_now = datetime.utcnow() + timedelta(hours=6)
-    current_time = bd_now.strftime("%I:%M %p, %d %b %Y")
-    
-    data, status = send_like_request(api_key_to_use, uid)
-
-    if status == 200 and data:
-        name = data.get("Name") or data.get("player_name") or data.get("name") or "N/A"
-        likes_given = data.get("Likes Sent") or data.get("likes_given") or 100
-        before = data.get("Before") or data.get("likes_before") or "N/A"
-        after = data.get("After") or data.get("likes_after") or "N/A"
-        daily_rem = data.get("Daily Remaining") or data.get("daily_remaining") or "N/A"
-
-        if likes_given or str(data.get("status", "")).lower() == "success":
-            msg = (
-                "🔥 **MARUF LIKE BOT**\n\n"
-                "✅ **Likes Sent Successfully!**\n\n"
-                f"👤 **UID:** `{uid}`\n"
-                f"📛 **Name:** `{name}`\n"
-                f"❤️ **Likes Sent:** +{likes_given}\n"
-                f"📊 **Before:** {before}\n"
-                f"📈 **After:** {after}\n"
-                f"⚡ **Daily Remaining:** {daily_rem}\n\n"
-                f"🕒 `{current_time}`"
-            )
-        else:
-            current_likes = data.get("Current Likes") or data.get("current_likes") or "N/A"
-            reason = data.get("Reason") or data.get("message") or "No new likes added"
-
-            msg = (
-                "🔥 **MARUF LIKE BOT**\n\n"
-                "⚠️ **No New Likes Added!**\n\n"
-                f"🎯 **UID:** `{uid}`\n"
-                f"📛 **Name:** `{name}`\n"
-                f"📊 **Current Likes:** {current_likes}\n"
-                f"❌ **Reason:** {reason}\n\n"
-                f"🕒 `{current_time}`"
-            )
-    else:
-        msg = f"❌ **API Error! Status Code: 404**\n\nসার্ভার লিংক পাওয়া যায়নি অথবা আপনার API Key বন্ধ। আপনার লাইক প্রোভাইডারের থেকে সঠিক Key ও URL লিংক সংগ্রহ করুন।"
-
-    await update.message.reply_text(msg, parse_mode='Markdown')
-
-async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    subs = active_subscriptions.get(user_id, [])
-    if not subs:
-        await update.message.reply_text("📋 কোনো সক্রিয় শেডিউল পাওয়া যায়নি।")
-        return
-    msg = "📋 **Active Schedules:**\n\n"
-    for idx, sub in enumerate(subs, 1):
-        msg += f"**{idx}. UID:** `{sub['uid']}` | **Auto Time:** `{sub['auto_time']}`\n"
-    await update.message.reply_text(msg, parse_mode='Markdown')
-
-async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id not in ADMIN_IDS:
-        await update.message.reply_text("❌ আপনি অ্যাডমিন নন!")
-        return
-    await update.message.reply_text("⚙️ **Admin Panel Active!**")
-
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port, use_reloader=False)
-
-async def main():
-    global telegram_app
-    telegram_app = Application.builder().token(BOT_TOKEN).build()
-
-    telegram_app.add_handler(CommandHandler("start", start))
-    telegram_app.add_handler(CommandHandler("help", help_command))
-    telegram_app.add_handler(CommandHandler("key", key_command))
-    telegram_app.add_handler(CommandHandler("support", support_command))
-    telegram_app.add_handler(CommandHandler("number", number_command))
-    telegram_app.add_handler(CommandHandler("rate", rate_command))
-    telegram_app.add_handler(CommandHandler("balance", balance_command))
-    telegram_app.add_handler(CommandHandler("verify", verify_command))
-    telegram_app.add_handler(CommandHandler("add", add_command))
-    telegram_app.add_handler(CommandHandler("delete", delete_command))
-    telegram_app.add_handler(CommandHandler("usage", usage_command))
-    telegram_app.add_handler(CommandHandler("time", time_command))
-    
-    telegram_app.add_handler(CommandHandler("like", like_command))
-    telegram_app.add_handler(CommandHandler("Like", like_command))
-    
-    telegram_app.add_handler(CommandHandler("list", list_command))
-    telegram_app.add_handler(CommandHandler("admin", admin_command))
-    telegram_app.add_handler(CallbackQueryHandler(button_handler))
-
-    asyncio.create_task(auto_like_checker())
-
-    loop = asyncio.get_event_loop()
-    loop.run_in_executor(None, run_flask)
-
-    await telegram_app.initialize()
-    await telegram_app.start()
-    await set_bot_commands(telegram_app)
-    
-    print("Telegram Bot Started Successfully!")
-    
-    await telegram_app.updater.start_polling(drop_pending_updates=True)
-    await asyncio.Event().wait()
-
-if __name__ == "__main__":
-    asyncio.run(main())
-    
+    bd_
