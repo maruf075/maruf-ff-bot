@@ -7,12 +7,12 @@ from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# --- 1. Render Port Scan Fix (Web Server) ---
+# --- 1. Render Port Scan Fix (Web Server for Free Instance) ---
 web_app = Flask(__name__)
 
 @web_app.route('/')
 def home():
-    return "Bot is running perfectly 24/7!"
+    return "Bot is running perfectly 24/7 on Free Tier!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
@@ -420,7 +420,7 @@ async def post_init(application):
 
 # --- 8. Main Function ---
 def main():
-    # Flask ওয়েব সার্ভার চালু করা (Render Web Service Timeout এড়ানোর জন্য)
+    # Flask ওয়েব সার্ভার চালু করা (Render Web Service Port Detection Fix)
     server_thread = Thread(target=run_flask)
     server_thread.daemon = True
     server_thread.start()
@@ -432,4 +432,4 @@ def main():
     telegram_app.add_handler(CommandHandler("key", key_command))
     telegram_app.add_handler(CommandHandler("support", support_command))
     telegram_app.add_handler(CommandHandler("number", number_command))
-    telegram_app.add_handler(CommandHandler("rate", rate_
+    telegram_app.add_handle
