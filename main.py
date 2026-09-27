@@ -2,13 +2,11 @@ import os
 import asyncio
 import requests
 from datetime import datetime, timedelta
-from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 BOT_TOKEN = "8915748936:AAGPXAt0h-7tWOPpumGWrzoYejXf3xRPHJQ"
 LIKE_API_KEY = "VALT2H"
-WEBHOOK_URL = "https://maruf-ff-bot.onrender.com"  # আপনার Render-এর URL
 
 ADMIN_IDS = [6347427263, 6992868111]  
 TELEGRAM_SUPPORT_USERNAME = "@maruf3900"  
@@ -27,9 +25,6 @@ vouchers_stock = {
     "25": [], "50": [], "115": [], "240": [], "610": [], "weekly": [], "monthly": []
 }
 
-app = Flask(__name__)
-telegram_app = Application.builder().token(BOT_TOKEN).build()
-
 def send_like_request(api_key, uid):
     endpoints = [
         f"https://key.like.mlbbshop.com/like?key={api_key}&uid={uid}",
@@ -46,6 +41,40 @@ def send_like_request(api_key, uid):
             continue
     return None, 404
 
+async def auto_like_checker(telegram_app):
+    while True:
+        try:
+            bd_now = datetime.utcnow() + timedelta(hours=6)
+            current_time_str = bd_now.strftime("%H:%M")
+
+            for user_id, subs in list(active_subscriptions.items()):
+                api_key_to_use = user_api_keys.get(user_id, LIKE_API_KEY)
+
+                for sub in list(subs):
+                    if bd_now > sub["end_date"]:
+                        subs.remove(sub)
+                        continue
+
+                    if sub["auto_time"] == current_time_str:
+                        uid = sub["uid"]
+                        data, status = send_like_request(api_key_to_use, uid)
+                        time_now_str = bd_now.strftime("%I:%M %p, %d %b %Y")
+
+                        if status == 200 and data:
+                            name = data.get("Name") or data.get("player_name") or "N/A"
+                            likes_given = data.get("Likes Sent") or 100
+                            msg = f"⏰ **[AUTO LIKE SENT]**\n\n👤 **UID:** `{uid}`\n📛 **Name:** `{name}`\n❤️ **Likes:** +{likes_given}\n🕒 `{time_now_str}`"
+                        else:
+                            msg = f"⏰ **[AUTO LIKE FAILED]**\n🎯 **UID:** `{uid}`"
+
+                        try:
+                            await telegram_app.bot.send_message(chat_id=user_id, text=msg, parse_mode='Markdown')
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+        await asyncio.sleep(30)
+
 async def set_bot_commands(application):
     commands = [
         BotCommand("start", "বট চালু করুন"),
@@ -59,7 +88,7 @@ async def set_bot_commands(application):
         BotCommand("add", "লাইক প্যাকেজ যোগ করুন"),
         BotCommand("delete", "শেডিউল ডিলিট করুন"),
         BotCommand("usage", "API Usage বিবরণ"),
-        BotCommand("list", "অ্যাক্টিভ শেডিউল লিস্ট"),
+        BotCommand("list", "অ্যাক্টিভ শেডিউলের তালিকা"),
         BotCommand("time", "অটো টাইম সেট করুন"),
         BotCommand("like", "ইনস্ট্যান্ট লাইক পাঠান"),
         BotCommand("stock", "UniPin ভাউচার স্টক দেখুন"),
@@ -277,7 +306,6 @@ async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_name = update.effective_user.first_name or "User"
     api_key_to_use = user_api_keys.get(user_id, LIKE_API_KEY)
-    bd_now = datetime.utcnow() + timedelta(hours=6)
     data, status = send_like_request(api_key_to_use, "100000000")
     daily_rem = data.get("Daily Remaining", "N/A") if data else "N/A"
     msg = f"🔑 **API Usage Details**\n👤 Username: {user_name}\n🔑 Key: `{api_key_to_use}`\n⚡ Daily Remaining: {daily_rem}"
@@ -327,49 +355,37 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == 'check_stock':
         await stock_command(query, context)
 
-# Register Handlers
-telegram_app.add_handler(CommandHandler("start", start))
-telegram_app.add_handler(CommandHandler("help", help_command))
-telegram_app.add_handler(CommandHandler("key", key_command))
-telegram_app.add_handler(CommandHandler("support", support_command))
-telegram_app.add_handler(CommandHandler("number", number_command))
-telegram_app.add_handler(CommandHandler("rate", rate_command))
-telegram_app.add_handler(CommandHandler("balance", balance_command))
-telegram_app.add_handler(CommandHandler("verify", verify_command))
-telegram_app.add_handler(CommandHandler("add", add_command))
-telegram_app.add_handler(CommandHandler("delete", delete_command))
-telegram_app.add_handler(CommandHandler("usage", usage_command))
-telegram_app.add_handler(CommandHandler("time", time_command))
-telegram_app.add_handler(CommandHandler("like", like_command))
-telegram_app.add_handler(CommandHandler("stock", stock_command))
-telegram_app.add_handler(CommandHandler("topup", topup_command))
-telegram_app.add_handler(CommandHandler("tp", topup_command))
-telegram_app.add_handler(CommandHandler("addvoucher", addvoucher_command))
-telegram_app.add_handler(CommandHandler("setrate", setrate_command))
-telegram_app.add_handler(CommandHandler("list", list_command))
-telegram_app.add_handler(CommandHandler("admin", admin_command))
-telegram_app.add_handler(CallbackQueryHandler(button_handler))
+async def post_init(application):
+    await set_bot_commands(application)
+    asyncio.create_task(auto_like_checker(application))
 
-@app.route('/')
-def home():
-    return "Bot is Live and Webhook Active!"
+def main():
+    telegram_app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
-@app.route(f'/{BOT_TOKEN}', methods=['POST'])
-def webhook():
-    json_str = request.get_data().decode('UTF-8')
-    update = Update.de_json(eval(json_str), telegram_app.bot)
-    asyncio.run(telegram_app.process_update(update))
-    return 'ok', 200
+    telegram_app.add_handler(CommandHandler("start", start))
+    telegram_app.add_handler(CommandHandler("help", help_command))
+    telegram_app.add_handler(CommandHandler("key", key_command))
+    telegram_app.add_handler(CommandHandler("support", support_command))
+    telegram_app.add_handler(CommandHandler("number", number_command))
+    telegram_app.add_handler(CommandHandler("rate", rate_command))
+    telegram_app.add_handler(CommandHandler("balance", balance_command))
+    telegram_app.add_handler(CommandHandler("verify", verify_command))
+    telegram_app.add_handler(CommandHandler("add", add_command))
+    telegram_app.add_handler(CommandHandler("delete", delete_command))
+    telegram_app.add_handler(CommandHandler("usage", usage_command))
+    telegram_app.add_handler(CommandHandler("time", time_command))
+    telegram_app.add_handler(CommandHandler("like", like_command))
+    telegram_app.add_handler(CommandHandler("stock", stock_command))
+    telegram_app.add_handler(CommandHandler("topup", topup_command))
+    telegram_app.add_handler(CommandHandler("tp", topup_command))
+    telegram_app.add_handler(CommandHandler("addvoucher", addvoucher_command))
+    telegram_app.add_handler(CommandHandler("setrate", setrate_command))
+    telegram_app.add_handler(CommandHandler("list", list_command))
+    telegram_app.add_handler(CommandHandler("admin", admin_command))
+    telegram_app.add_handler(CallbackQueryHandler(button_handler))
 
-def setup_webhook():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(telegram_app.initialize())
-    loop.run_until_complete(set_bot_commands(telegram_app))
-    loop.run_until_complete(telegram_app.bot.set_webhook(url=f"{WEBHOOK_URL}/{BOT_TOKEN}"))
+    telegram_app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    setup_webhook()
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
-                   
+    main()
+    
