@@ -19,7 +19,7 @@ from telegram.ext import (
 # CONFIG
 # ============================================================
 # Bot token intentionally left blank. Put it in Render Environment Variables.
-BOT_TOKEN = os.getenv("8915748936:AAFtZ08QQ-_BBvrwjMydusssz9A5e1ME6i0")
+BOT_TOKEN = os.getenv("8915748936:AAFtZ08QQ-_BBvrwjMydusssz9A5e1ME6i0", "")
 
 # The Like API key shown in the user's uploaded dashboard screenshot.
 # Change/rotate it later if the provider issues a new key.
